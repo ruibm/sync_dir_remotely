@@ -13,8 +13,10 @@
 #########################################################
 import argparse
 import datetime
-import time
+import json
 import socket
+import struct
+import time
 
 
 
@@ -86,12 +88,16 @@ class RemoteServer(object):
           self._args.port))
       self._socket.listen(1)
       connection, address = self._socket.accept()
-      self.log.info('Accepted connection from address: [{}]'.format(str(address)))
-      with MessageHandler(connection, address) as handler:
+      self.log.info('Accepted connection from address: [{}]'.format(
+          str(address)))
+      with StreamHandler(connection) as handler:
         handler.run()
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
+    if exc_type and exc_value and traceback:
+      self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
+          .format(exc_type, exc_value, traceback))
     if self._socket:
       self._socket.close()
       self._socket = None
@@ -106,10 +112,12 @@ class LocalClient(object):
     self.log = Logger(LocalClient.__name__)
     self.log.info('Initing...')
     self._args = args
+    self._serde = MessageSerde()
 
   def __enter__(self):
     self.log.info('Entering...')
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket.settimeout(1.0) # seconds
     remote = self._args.remote
     port = self._args.port
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
@@ -120,9 +128,26 @@ class LocalClient(object):
 
   def run(self):
     self.log.info('Running...')
+    while True:
+      try:
+        with StreamHandler(self._socket, close_on_exit=False) as handler:
+          handler.run()
+      except socket.timeout:
+        # Nothing to receive from the server.
+        pass
+
+      msg = Message(MessageType.PING_REQUEST)
+      self.sendMessage(msg)
+
+  def sendMessage(self, message):
+    data = self._serde.serialise(Message(MessageType.PING_REQUEST))
+    self._socket.sendall(data)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
+    if self._socket:
+      self._socket.close()
+      self._socket = None
 
 
 
@@ -154,12 +179,14 @@ class Logger(object):
     print '[{}][{}]<{}> {}'.format(level, ts, self._name, msg)
 
 
-class MessageHandler(object):
-  def __init__(self, conn, addr):
-    self.log = Logger(MessageHandler.__name__)
-    self._conn = conn
-    self._addr = addr
-    self._buffer = []
+class StreamHandler(object):
+  def __init__(self, socket, close_on_exit=True):
+    self.log = Logger(StreamHandler.__name__)
+    self._socket = socket
+    self._close_on_exit = close_on_exit
+    self._buffer = ''
+    self._serde = MessageSerde()
+    self._handler = MessageHandler()
 
   def __enter__(self):
     self.log.info('Entering...')
@@ -168,23 +195,83 @@ class MessageHandler(object):
   def run(self):
     self.log.info('Running...')
     while True:
-      data = self._conn.recv(1024)
+      data = self._socket.recv(1024)
       datal = len(data)
       if datal == 0:
         self.log.info('Remote client disconnected.')
         return
       elif datal > 0:
         self.log.info('Received [{}] bytes.'.format(datal))
-        self._buffer.extend(data)
+        self._buffer += data
+        message, unused = self._serde.deserialise(self._buffer)
+        self._buffer = unused
+        if message != None:
+          response = self._handler.handleMessage(message)
+          if response != None:
+            response_data = self._serde.serialise(response)
+            self._socket.sendall(response_data)
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
 
-
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
-    if self._conn:
-      self._conn.close()
-      self._conn = None
+    if self._close_on_exit and self._socket:
+      self._socket.close()
+      self._socket = None
+
+
+class MessageType(object):
+  PING_REQUEST = 0
+  PING_RESPONSE = 1
+
+class Message(object):
+  def __init__(self, message_type):
+    self.type = message_type
+    self.body = {}
+
+
+class MessageSerde(object):
+  def __init__(self):
+    self.log = Logger(MessageSerde.__name__)
+
+  def serialise(self, message):
+    """ Returns a list of bytes containing the serialised msg/ """
+    output = ''
+    serialized_body = json.dumps(message.body)
+    self.log.warn("rui " + str(message.type))
+    output += struct.pack('>i', message.type)
+    output += struct.pack('>l', len(serialized_body))
+    output += serialized_body
+    return output
+
+  def deserialise(self, input):
+    """ Returns a tuple (Message, UnusedBytesList) """
+    if len(input) < 12:
+      return (None, input)
+    self.log.info('input=[{}]'.format(input))
+    message = Message(struct.unpack('>i', input[0:4]))
+    body_size = struct.unpack('>l', input[4:12])
+    if len(input) < 12 + body_size:
+      return (None, input)
+    raw_body = input[12:body_size + 12]
+    message.update(json.loads(raw_body))
+    return (Message, input[body_size + 12:])
+
+
+class MessageHandler(object):
+  def __init__(self):
+    self.log = Logger(MessageHandler.__name__)
+
+  def handleMessage(message):
+    self.log.info("Handling message of type: [{}]".format(message.type))
+    # Odd numbered MessageType's are responses.
+    if message.type % 2 == 1:
+      return None
+    # TODO(ruibm): Do the proper thing instead of just mirroring.
+    response = Message(message.PING_RESPONSE)
+    self.log.info("Responding with message of type: [{}]".format(response.type))
+    return Message(message.PING_RESPONSE)
+
 
 
 
