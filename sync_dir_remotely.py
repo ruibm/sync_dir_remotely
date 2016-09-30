@@ -12,6 +12,8 @@
 # Imports
 #########################################################
 import argparse
+import datetime
+import time
 import socket
 
 
@@ -36,6 +38,17 @@ def parse_args():
       default=8082,
       type=int,
       help='Remote server listen port.',
+  )
+
+  parser.add_argument(
+      '-v',
+      '--verbosity',
+      default=LOG_LEVELS.index('info'),
+      type=int,
+      choices=range(len(LOG_LEVELS)),
+      help='Remote server listen port. levels=[{}]'.format(
+          ', '.join(['{}={}'.format(LOG_LEVELS[i], i) \
+              for i in range(len(LOG_LEVELS))])),
   )
 
   args = parser.parse_args()
@@ -102,23 +115,28 @@ class LocalClient(object):
 # Common Classes
 #########################################################
 class Logger(object):
-  def __init__(self, log_name=''):
+  LEVEL = 2
+
+  def __init__(self, log_name):
     self._name = log_name
 
   def info(self, msg):
-    self._log('INFO', msg)
+    self._log(2, msg)
 
   def warn(self, msg):
-    self._log('WARN', msg)
+    self._log(1, msg)
 
   def error(self, msg):
-    self._log('ERROR', msg)
+    self._log(0, msg)
 
   def _log(self, level, msg):
-    if self._name:
-      print '[{}]<{}> {}'.format(level.upper(), self._name, msg)
-    else:
-      print '[{}] {}'.format(level.upper(), msg)
+    if level > Logger.LEVEL:
+      return
+
+    ts = datetime.datetime.fromtimestamp(time.time()) \
+        .strftime('%Y-%m-%d %H:%M:%S.%f')
+    level = LOG_LEVELS[level].upper()[0]
+    print '[{}][{}]<{}> {}'.format(level, ts, self._name, msg)
 
 
 class MessageHandler(object):
@@ -151,6 +169,7 @@ class MessageHandler(object):
 #########################################################
 # Constants
 #########################################################
+LOG_LEVELS = ('error', 'warn', 'info', 'verbose')
 LOG = Logger('main')
 
 
@@ -160,6 +179,7 @@ LOG = Logger('main')
 #########################################################
 def main():
   args = parse_args()
+  Logger.LEVEL = args.verbosity
   LOG.info('Mode: [{}]'.format(args.mode))
   if args.mode == 'remote':
     with RemoteServer(args) as server:
