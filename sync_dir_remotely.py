@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
 #
 # This program continuously one-way synchronises one local directory
 # into a remote machine.
@@ -51,6 +51,14 @@ def parse_args():
               for i in range(len(LOG_LEVELS))])),
   )
 
+  parser.add_argument(
+      '-r',
+      '--remote',
+      default='localhost',
+      type=str,
+      help='Remote machine to connect to.',
+  )
+
   args = parser.parse_args()
   return args
 
@@ -101,6 +109,13 @@ class LocalClient(object):
 
   def __enter__(self):
     self.log.info('Entering...')
+    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    remote = self._args.remote
+    port = self._args.port
+    self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
+    self._socket.connect((remote, port))
+    self.log.info('Successfully connected to [{}:{}]'.format(
+        remote, port))
     return self
 
   def run(self):
@@ -154,9 +169,16 @@ class MessageHandler(object):
     self.log.info('Running...')
     while True:
       data = self._conn.recv(1024)
-      self.log.info('Received [{}] bytes.'.format(len(data)))
-      if len(data) > 0:
+      datal = len(data)
+      if datal == 0:
+        self.log.info('Remote client disconnected.')
+        return
+      elif datal > 0:
+        self.log.info('Received [{}] bytes.'.format(datal))
         self._buffer.extend(data)
+      else:
+        assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
+
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')

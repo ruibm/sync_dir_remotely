@@ -1,2 +1,6 @@
 === TODO
 
+X Implement LocalClient to connect to the RemoteServer.
+- Implement the message MessageSerde.
+- Send Ping message from LocalClient to RemoteServer.
+- Respond to Ping message from RemoteServer.
