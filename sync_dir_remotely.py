@@ -128,20 +128,15 @@ class LocalClient(object):
 
   def run(self):
     self.log.info('Running...')
-    while True:
-      try:
-        with StreamHandler(self._socket, close_on_exit=False) as handler:
+    with StreamHandler(self._socket) as handler:
+      while True:
+        try:
           handler.run()
-      except socket.timeout:
-        # Nothing to receive from the server.
-        pass
-
-      msg = Message(MessageType.PING_REQUEST)
-      self.sendMessage(msg)
-
-  def sendMessage(self, message):
-    data = self._serde.serialise(Message(MessageType.PING_REQUEST))
-    self._socket.sendall(data)
+        except socket.timeout:
+          # Nothing to receive from the server.
+          pass
+        msg = Message(MessageType.PING_REQUEST)
+        handler.sendMessage(msg)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
@@ -159,6 +154,12 @@ class Logger(object):
 
   def __init__(self, log_name):
     self._name = log_name
+
+  def verbose(self, msg):
+    self._log(4, msg)
+
+  def debug(self, msg):
+    self._log(3, msg)
 
   def info(self, msg):
     self._log(2, msg)
@@ -180,10 +181,9 @@ class Logger(object):
 
 
 class StreamHandler(object):
-  def __init__(self, socket, close_on_exit=True):
+  def __init__(self, socket):
     self.log = Logger(StreamHandler.__name__)
     self._socket = socket
-    self._close_on_exit = close_on_exit
     self._buffer = ''
     self._serde = MessageSerde()
     self._handler = MessageHandler()
@@ -208,16 +208,21 @@ class StreamHandler(object):
         if message != None:
           response = self._handler.handleMessage(message)
           if response != None:
-            response_data = self._serde.serialise(response)
-            self._socket.sendall(response_data)
+            self.sendMessage(response)
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
-    if self._close_on_exit and self._socket:
+    if self._socket:
       self._socket.close()
       self._socket = None
+
+  def sendMessage(self, message):
+    data = self._serde.serialise(message)
+    self.log.info('Sending message of type [{}] and size [{}] bytes...'\
+        .format(message.type, len(data)))
+    self._socket.sendall(data)
 
 
 class MessageType(object):
@@ -236,49 +241,50 @@ class MessageSerde(object):
 
   def serialise(self, message):
     """ Returns a list of bytes containing the serialised msg/ """
-    output = ''
-    serialized_body = json.dumps(message.body)
-    self.log.warn("rui " + str(message.type))
-    output += struct.pack('>i', message.type)
-    output += struct.pack('>l', len(serialized_body))
-    output += serialized_body
-    return output
+    body = json.dumps(message.body)
+    header = struct.pack('>ii', message.type, len(body))
+    return header + body
 
   def deserialise(self, input):
     """ Returns a tuple (Message, UnusedBytesList) """
-    if len(input) < 12:
+    self.log.info('Deserialising input of [{}] bytes...'.format(len(input)))
+    header_size = 8
+    if len(input) < header_size:
+      self.log.verbose('Input buffer has less than 8 bytes.')
       return (None, input)
-    self.log.info('input=[{}]'.format(input))
-    message = Message(struct.unpack('>i', input[0:4]))
-    body_size = struct.unpack('>l', input[4:12])
-    if len(input) < 12 + body_size:
+    message_type, body_size = struct.unpack('>ii', input[0:header_size])
+    message = Message(message_type)
+    total_size = header_size + body_size
+    if len(input) < total_size:
+      self.log.verbose('Input buffer has less than [{}] bytes.'.format(
+          total_size))
       return (None, input)
-    raw_body = input[12:body_size + 12]
-    message.update(json.loads(raw_body))
-    return (Message, input[body_size + 12:])
+    if body_size > 0:
+      raw_body = input[header_size:total_size]
+      message.body.update(json.loads(raw_body))
+    return (message, input[total_size:])
 
 
 class MessageHandler(object):
   def __init__(self):
     self.log = Logger(MessageHandler.__name__)
 
-  def handleMessage(message):
-    self.log.info("Handling message of type: [{}]".format(message.type))
+  def handleMessage(self, message):
+    self.log.info('Handling message of type: [{}]'.format(message.type))
     # Odd numbered MessageType's are responses.
     if message.type % 2 == 1:
       return None
     # TODO(ruibm): Do the proper thing instead of just mirroring.
-    response = Message(message.PING_RESPONSE)
+    response = Message(MessageType.PING_RESPONSE)
     self.log.info("Responding with message of type: [{}]".format(response.type))
-    return Message(message.PING_RESPONSE)
-
+    return response
 
 
 
 #########################################################
 # Constants
 #########################################################
-LOG_LEVELS = ('error', 'warn', 'info', 'verbose')
+LOG_LEVELS = ('error', 'warn', 'info', 'debug', 'verbose')
 LOG = Logger('main')
 
 
