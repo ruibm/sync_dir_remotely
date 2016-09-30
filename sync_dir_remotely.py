@@ -208,6 +208,9 @@ class StreamHandler(object):
         if message != None:
           response = self._handler.handleMessage(message)
           if response != None:
+            assert response.type % 2 == 1, \
+                ('All responses must be of an odd type. '
+                    'Found type [{}] instead.').format(response.type)
             self.sendMessage(response)
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
@@ -226,6 +229,7 @@ class StreamHandler(object):
 
 
 class MessageType(object):
+  """ All Response types must be odd numbered """
   PING_REQUEST = 0
   PING_RESPONSE = 1
 
