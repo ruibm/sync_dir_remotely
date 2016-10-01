@@ -12,7 +12,9 @@
 # Imports
 #########################################################
 import argparse
+import copy # copy.deepcopy(x)
 import datetime
+import hashlib
 import json
 import os
 import os.path
@@ -48,7 +50,7 @@ def parse_args():
   parser.add_argument(
       '-v',
       '--verbosity',
-      default=LOG_LEVELS.index('info'),
+      default=LOG_LEVELS.index('info') - 1,
       type=int,
       choices=range(len(LOG_LEVELS)),
       help='Remote server listen port. levels=[{}]'.format(
@@ -165,13 +167,10 @@ class LocalClient(object):
 # Common Classes
 #########################################################
 class Logger(object):
-  LEVEL = 4
+  LEVEL = 3
 
   def __init__(self, log_name):
     self._name = log_name
-
-  def verbose(self, msg):
-    self._log(4, msg)
 
   def debug(self, msg):
     self._log(3, msg)
@@ -221,7 +220,7 @@ class StreamHandler(object):
         unused_bytes = len(unused)
         used_bytes = len(self._buffer) - unused_bytes
         self._buffer = unused
-        self.log.verbose(
+        self.log.debug(
             'Received message_type=[{}] used_bytes=[{}] unused_bytes=[{}].'\
                 .format(message.type, used_bytes, unused_bytes))
         return message
@@ -267,13 +266,13 @@ class MessageSerde(object):
     self.log.info('Deserialising input of [{}] bytes...'.format(len(input)))
     header_size = 8
     if len(input) < header_size:
-      self.log.verbose('Input buffer has less than 8 bytes.')
+      self.log.debug('Input buffer has less than 8 bytes.')
       return (None, input)
     message_type, body_size = struct.unpack('>ii', input[0:header_size])
     message = Message(message_type)
     total_size = header_size + body_size
     if len(input) < total_size:
-      self.log.verbose('Input buffer has less than [{}] bytes.'.format(
+      self.log.debug('Input buffer has less than [{}] bytes.'.format(
           total_size))
       return (None, input)
     if body_size > 0:
@@ -300,21 +299,48 @@ class MessageHandler(object):
 class DirCrawler(object):
   def __init__(self, root_dir, exclude_list=[]):
     self.log = Logger(type(self).__name__)
-    self._dir = root_dir
+    self._dir = os.path.abspath(os.path.expanduser(root_dir))
+    assert os.path.isdir(self._dir), \
+        'Argument root_dir [{}] must exist.'.format(self._dir)
     self._excludes = [re.compile(pattern) for pattern in exclude_list]
 
   def crawl(self):
+    '''Returns a list of relative paths of all files recursively.'''
     self.log.info('Starting to crawl [{}]...'.format(self._dir))
     all_files = []
     for root, dirs, files in os.walk(self._dir):
       for f in files:
         rel_path = os.path.join(root, f)
-        # self.log.verbose('Found file [{}]'.format(rel_path))
         if not self._is_excluded(rel_path):
           all_files.append(rel_path)
     self.log.info('Crawl found a total of [{}] files...'.format(len(all_files)))
-    print all_files
     return all_files
+
+  def crawl_and_hash(self, previous_results={}):
+    '''Returns a dict with keyed off file_rel_path with md5_hash information.'''
+    all_files = self.crawl()
+    self.log.info('Computing the md5 hash for [{}] files...'\
+        .format(len(all_files)))
+    data = {}
+    for file_path in all_files:
+      mtime = os.path.getmtime(file_path)
+      if file_path in previous_results and \
+          previous_results[file_path]['mtime'] >= mtime:
+        data[file_path] = previous_results[file_path]['mtime']
+      else:
+        data[file_path] = {
+            'md5': DirCrawler.md5_hash(file_path),
+            'mtime': mtime}
+    self.log.info('Finished computing all md5s.')
+    return data
+
+  @staticmethod
+  def md5_hash(file_path):
+    md5_hash = hashlib.md5()
+    with open(file_path, "rb") as f:
+      for fragment in iter(lambda: f.read(4096), b''):
+        md5_hash.update(fragment)
+    return md5_hash.hexdigest()
 
   def _is_excluded(self, path):
     for regex in self._excludes:
@@ -324,13 +350,10 @@ class DirCrawler(object):
 
 
 
-
-
-
 #########################################################
 # Constants
 #########################################################
-LOG_LEVELS = ('error', 'warn', 'info', 'debug', 'verbose')
+LOG_LEVELS = ('disabled', 'error', 'warn', 'info', 'debug')
 LOG = Logger('main')
 
 
@@ -340,7 +363,7 @@ LOG = Logger('main')
 #########################################################
 def main():
   args = parse_args()
-  Logger.LEVEL = args.verbosity
+  Logger.LEVEL = args.verbosity - 1
   LOG.info('Mode: [{}]'.format(args.mode))
   if args.mode == 'remote':
     with RemoteServer(args) as server:

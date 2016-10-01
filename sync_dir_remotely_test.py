@@ -51,6 +51,23 @@ class DirCrawlerTest(unittest.TestCase):
     files = crawler.crawl()
     self.assertEqual(2, len(files))
 
+  def test_crawl_and_hash_test_folder(self):
+    crawler = DirCrawler('test_data/DirCrawlerTest', [r'.*/\..*'])
+    files = crawler.crawl_and_hash()
+    self.assertEqual(2, len(files))
+    for file_path in files:
+      self.assertEqual('0af9f1702bc23d5a33268e2755457773',
+          files[file_path]['md5'])
+
+  def test_buck_folder(self):
+    crawler = DirCrawler('~/buck/', [r'.*/\..*'])
+    files = crawler.crawl_and_hash()
+    files = crawler.crawl_and_hash(files)
+    self.assertEqual(2, len(files))
+    for file_path in files:
+      self.assertEqual('0af9f1702bc23d5a33268e2755457773',
+          files[file_path]['md5'])
+
 
 
 #########################################################
@@ -64,5 +81,6 @@ class DirCrawlerTest(unittest.TestCase):
 #########################################################
 
 if __name__ == '__main__':
+  Logger.LEVEL = 3
   unittest.main(verbosity=2)
 
