@@ -22,6 +22,7 @@ import re
 import socket
 import struct
 import time
+import threading
 
 
 
@@ -65,6 +66,14 @@ def parse_args():
       help='Remote machine to connect to.',
   )
 
+  parser.add_argument(
+      '-d',
+      '--dir',
+      required=True,
+      type=str,
+      help='The directory to keep in sync.',
+  )
+
   args = parser.parse_args()
   return args
 
@@ -93,7 +102,7 @@ class RemoteServer(object):
           self._args.port))
       self._socket.listen(1)
       connection, address = self._socket.accept()
-      connection.settimeout(30.0) # seconds
+      # connection.settimeout(30.0) # seconds
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
       with StreamHandler(connection) as streamHandler:
@@ -132,8 +141,10 @@ class LocalClient(object):
 
   def __enter__(self):
     self.log.debug('Entering...')
+    self._monitor = DirMonitor(self._args.dir)
+    self._monitor.start_monitoring()
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self._socket.settimeout(1.0) # seconds
+    # self._socket.settimeout(1.0) # seconds
     remote = self._args.remote
     port = self._args.port
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
@@ -146,7 +157,7 @@ class LocalClient(object):
     with StreamHandler(self._socket) as streamHandler:
       while True:
         request = Message(MessageType.PING_REQUEST)
-        streamHandler.sendMessage(request)
+        # streamHandler.sendMessage(request)
         try:
           response = streamHandler.recvMessage()
           self._msgHandler.handleMessage(response)
@@ -156,6 +167,9 @@ class LocalClient(object):
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.debug('Exiting...')
+    if self._monitor:
+      self._monitor.stop_monitoring()
+      self._monitor = None
     if self._socket:
       self._socket.close()
       self._socket = None
@@ -336,7 +350,7 @@ class DirCrawler(object):
         md5 = DirCrawler.md5_hash(file_path)
         computed_md5s += 1
         data[file_path] = (mtime, md5)
-    self.log.debug('Finished computing all [{}] md5s and reused [{}].'.format(
+    self.log.info('Finished computing all [{}] md5s and reused [{}].'.format(
         computed_md5s, reused_md5s))
     return data
 
@@ -353,6 +367,34 @@ class DirCrawler(object):
       if None != regex.match(path):
         return True
     return False
+
+
+class DirMonitor(object):
+  def __init__(self, dir_to_monitor):
+    self.log = Logger(type(self).__name__)
+    self._crawler = DirCrawler(dir_to_monitor)
+    self.files = self._crawler.crawl_and_hash()
+
+  def start_monitoring(self):
+    self._thread = threading.Thread(
+        target=self._thread_main, name='DirMonitorThread')
+    self._thread.daemon = True
+    self._is_monitoring = True
+    self._thread.start()
+
+  def stop_monitoring(self):
+    self._is_monitoring = False
+    if self._thread:
+      # self._thread.join()
+      self._thread = None
+
+  def _thread_main(self):
+    self.log.info('Monitoring thread is running...')
+    while self._is_monitoring:
+      self.log.info('Monitor knows of [{}] files.'.format(len(self.files)))
+      self.files = self._crawler.crawl_and_hash(self.files)
+      time.sleep(5.0)
+    self.log.info('Monitoring thread is exiting.')
 
 
 
