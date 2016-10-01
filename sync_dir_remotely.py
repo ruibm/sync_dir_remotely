@@ -50,9 +50,8 @@ def parse_args():
   parser.add_argument(
       '-v',
       '--verbosity',
-      default=LOG_LEVELS.index('info') - 1,
+      default=2,
       type=int,
-      choices=range(len(LOG_LEVELS)),
       help='Remote server listen port. levels=[{}]'.format(
           ', '.join(['{}={}'.format(LOG_LEVELS[i], i) \
               for i in range(len(LOG_LEVELS))])),
@@ -77,18 +76,18 @@ def parse_args():
 class RemoteServer(object):
   def __init__(self, args):
     self.log = Logger(type(self).__name__)
-    self.log.info('Initing...')
+    self.log.debug('Initing...')
     self._args = args
     self._msgHandler = MessageHandler()
 
   def __enter__(self):
-    self.log.info('Initializing...')
+    self.log.debug('Initializing...')
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.bind(('', self._args.port))
     return self
 
   def run(self):
-    self.log.info('Running...')
+    self.log.debug('Running...')
     while True:
       self.log.info('Listening for incoming connections in port [{}]...'.format(
           self._args.port))
@@ -101,6 +100,7 @@ class RemoteServer(object):
         while True:
           message = streamHandler.recvMessage()
           if None == message:
+            self.log.info('Remote client disconnected.')
             break
           else:
             response = self._msgHandler.handleMessage(message)
@@ -110,7 +110,7 @@ class RemoteServer(object):
             streamHandler.sendMessage(response)
 
   def __exit__(self, exc_type, exc_value, traceback):
-    self.log.info('Exiting...')
+    self.log.debug('Exiting...')
     if exc_type and exc_value and traceback:
       self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
           .format(exc_type, exc_value, traceback))
@@ -126,24 +126,23 @@ class RemoteServer(object):
 class LocalClient(object):
   def __init__(self, args):
     self.log = Logger(type(self).__name__)
-    self.log.info('Initializing...')
+    self.log.debug('Initializing...')
     self._args = args
     self._msgHandler = MessageHandler()
 
   def __enter__(self):
-    self.log.info('Entering...')
+    self.log.debug('Entering...')
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.settimeout(1.0) # seconds
     remote = self._args.remote
     port = self._args.port
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
     self._socket.connect((remote, port))
-    self.log.info('Successfully connected to [{}:{}]'.format(
-        remote, port))
+    self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
     return self
 
   def run(self):
-    self.log.info('Running...')
+    self.log.debug('Running...')
     with StreamHandler(self._socket) as streamHandler:
       while True:
         request = Message(MessageType.PING_REQUEST)
@@ -156,7 +155,7 @@ class LocalClient(object):
           pass
 
   def __exit__(self, exc_type, exc_value, traceback):
-    self.log.info('Exiting...')
+    self.log.debug('Exiting...')
     if self._socket:
       self._socket.close()
       self._socket = None
@@ -190,7 +189,8 @@ class Logger(object):
 
     ts = datetime.datetime.fromtimestamp(time.time()) \
         .strftime('%Y-%m-%d %H:%M:%S.%f')
-    level = LOG_LEVELS[level].upper()[0]
+    if level >= 0 and level < len(LOG_LEVELS):
+      level = LOG_LEVELS[level].upper()[0]
     print '[{}][{}]<{}> {}'.format(level, ts, self._name, msg)
 
 
@@ -202,19 +202,19 @@ class StreamHandler(object):
     self._serde = MessageSerde()
 
   def __enter__(self):
-    self.log.info('Entering...')
+    self.log.debug('Entering...')
     return self
 
   def recvMessage(self):
-    self.log.info('Receiving message...')
+    self.log.debug('Receiving message...')
     while True:
       data = self._socket.recv(1024)
       datal = len(data)
       if datal == 0:
-        self.log.info('Remote client disconnected.')
+        self.log.debug('Remote client disconnected.')
         return None
       elif datal > 0:
-        self.log.info('Received [{}] bytes.'.format(datal))
+        self.log.debug('Received [{}] bytes.'.format(datal))
         self._buffer += data
         message, unused = self._serde.deserialise(self._buffer)
         unused_bytes = len(unused)
@@ -228,14 +228,14 @@ class StreamHandler(object):
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
 
   def __exit__(self, exc_type, exc_value, traceback):
-    self.log.info('Exiting...')
+    self.log.debug('Exiting...')
     if self._socket:
       self._socket.close()
       self._socket = None
 
   def sendMessage(self, message):
     data = self._serde.serialise(message)
-    self.log.info('Sending message of type [{}] and size [{}] bytes...'\
+    self.log.debug('Sending message of type [{}] and size [{}] bytes...'\
         .format(message.type, len(data)))
     self._socket.sendall(data)
 
@@ -263,7 +263,7 @@ class MessageSerde(object):
 
   def deserialise(self, input):
     """ Returns a tuple (Message, UnusedBytesList) """
-    self.log.info('Deserialising input of [{}] bytes...'.format(len(input)))
+    self.log.debug('Deserialising input of [{}] bytes...'.format(len(input)))
     header_size = 8
     if len(input) < header_size:
       self.log.debug('Input buffer has less than 8 bytes.')
@@ -286,52 +286,58 @@ class MessageHandler(object):
     self.log = Logger(type(self).__name__)
 
   def handleMessage(self, message):
-    self.log.info('Handling message of type: [{}]'.format(message.type))
+    self.log.debug('Handling message of type: [{}]'.format(message.type))
     # Odd numbered MessageType's are responses.
     if message.type % 2 == 1:
       return None
     # TODO(ruibm): Do the proper thing instead of just mirroring.
     response = Message(MessageType.PING_RESPONSE)
-    self.log.info("Responding with message of type: [{}]".format(response.type))
+    self.log.debug("Responding with message of type: [{}]".format(response.type))
     return response
 
 
 class DirCrawler(object):
   def __init__(self, root_dir, exclude_list=[]):
     self.log = Logger(type(self).__name__)
-    self._dir = os.path.abspath(os.path.expanduser(root_dir))
+    self._dir = root_dir
+    self._dir = os.path.expanduser(self._dir)
+    self._dir = os.path.abspath(self._dir)
     assert os.path.isdir(self._dir), \
-        'Argument root_dir [{}] must exist.'.format(self._dir)
+        'Argument root_dir [{}] => [{}] must exist.'.format(root_dir, self._dir)
     self._excludes = [re.compile(pattern) for pattern in exclude_list]
 
   def crawl(self):
     '''Returns a list of relative paths of all files recursively.'''
-    self.log.info('Starting to crawl [{}]...'.format(self._dir))
+    self.log.debug('Starting to crawl [{}]...'.format(self._dir))
     all_files = []
     for root, dirs, files in os.walk(self._dir):
       for f in files:
         rel_path = os.path.join(root, f)
         if not self._is_excluded(rel_path):
           all_files.append(rel_path)
-    self.log.info('Crawl found a total of [{}] files...'.format(len(all_files)))
+    self.log.debug('Crawl found a total of [{}] files...'.format(len(all_files)))
     return all_files
 
   def crawl_and_hash(self, previous_results={}):
     '''Returns a dict with keyed off file_rel_path with md5_hash information.'''
     all_files = self.crawl()
-    self.log.info('Computing the md5 hash for [{}] files...'\
+    self.log.debug('Computing the md5 hash for [{}] files...'\
         .format(len(all_files)))
     data = {}
+    computed_md5s = 0
+    reused_md5s = 0
     for file_path in all_files:
       mtime = os.path.getmtime(file_path)
       if file_path in previous_results and \
-          previous_results[file_path]['mtime'] >= mtime:
-        data[file_path] = previous_results[file_path]['mtime']
+          previous_results[file_path][0] >= mtime:
+        reused_md5s += 1
+        data[file_path] = previous_results[file_path]
       else:
-        data[file_path] = {
-            'md5': DirCrawler.md5_hash(file_path),
-            'mtime': mtime}
-    self.log.info('Finished computing all md5s.')
+        md5 = DirCrawler.md5_hash(file_path)
+        computed_md5s += 1
+        data[file_path] = (mtime, md5)
+    self.log.debug('Finished computing all [{}] md5s and reused [{}].'.format(
+        computed_md5s, reused_md5s))
     return data
 
   @staticmethod
@@ -353,7 +359,7 @@ class DirCrawler(object):
 #########################################################
 # Constants
 #########################################################
-LOG_LEVELS = ('disabled', 'error', 'warn', 'info', 'debug')
+LOG_LEVELS = ('error', 'warn', 'info', 'debug')
 LOG = Logger('main')
 
 
@@ -363,7 +369,7 @@ LOG = Logger('main')
 #########################################################
 def main():
   args = parse_args()
-  Logger.LEVEL = args.verbosity - 1
+  Logger.LEVEL = args.verbosity
   LOG.info('Mode: [{}]'.format(args.mode))
   if args.mode == 'remote':
     with RemoteServer(args) as server:
