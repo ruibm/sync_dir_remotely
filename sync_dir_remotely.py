@@ -14,6 +14,9 @@
 import argparse
 import datetime
 import json
+import os
+import os.path
+import re
 import socket
 import struct
 import time
@@ -162,7 +165,7 @@ class LocalClient(object):
 # Common Classes
 #########################################################
 class Logger(object):
-  LEVEL = 2
+  LEVEL = 4
 
   def __init__(self, log_name):
     self._name = log_name
@@ -292,6 +295,35 @@ class MessageHandler(object):
     response = Message(MessageType.PING_RESPONSE)
     self.log.info("Responding with message of type: [{}]".format(response.type))
     return response
+
+
+class DirCrawler(object):
+  def __init__(self, root_dir, exclude_list=[]):
+    self.log = Logger(type(self).__name__)
+    self._dir = root_dir
+    self._excludes = [re.compile(pattern) for pattern in exclude_list]
+
+  def crawl(self):
+    self.log.info('Starting to crawl [{}]...'.format(self._dir))
+    all_files = []
+    for root, dirs, files in os.walk(self._dir):
+      for f in files:
+        rel_path = os.path.join(root, f)
+        # self.log.verbose('Found file [{}]'.format(rel_path))
+        if not self._is_excluded(rel_path):
+          all_files.append(rel_path)
+    self.log.info('Crawl found a total of [{}] files...'.format(len(all_files)))
+    print all_files
+    return all_files
+
+  def _is_excluded(self, path):
+    for regex in self._excludes:
+      if None != regex.match(path):
+        return True
+    return False
+
+
+
 
 
 

@@ -32,7 +32,7 @@ from sync_dir_remotely import *
 #########################################################
 # Classes
 #########################################################
-class TestMessageSerde(unittest.TestCase):
+class MessageSerdeTest(unittest.TestCase):
   def test_symmetry(self):
     serde = MessageSerde()
     message = Message(42)
@@ -43,6 +43,14 @@ class TestMessageSerde(unittest.TestCase):
     actual_msg, unused = serde.deserialise(data)
     self.assertEqual(0, len(unused))
     self.assertEqual(value, actual_msg.body[key])
+
+
+class DirCrawlerTest(unittest.TestCase):
+  def test_crawl_test_folder(self):
+    crawler = DirCrawler('test_data/DirCrawlerTest', [r'.*/\..*'])
+    files = crawler.crawl()
+    self.assertEqual(2, len(files))
+
 
 
 #########################################################

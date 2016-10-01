@@ -1,0 +1,17 @@
+=== TODO
+
+X Implement LocalClient to connect to the RemoteServer.
+X Implement the message MessageSerde.
+X Send Ping message from LocalClient to RemoteServer.
+X Respond to Ping message from RemoteServer.
+X Create the first unit test.
+- Implement simple filesystem crawler for a directory.
+- Compute SHA1 of every file in the directory.
+- Add unit tests for crawling.
+- Check change date before deciding to compute new SHA1.
+- Compute SHA1's continuously in a background thread.
+- Implement new Request type to get diff.
+- Implement new Request type to upload files.
+- Symmetric encryption with shared secret.
+- Auto shutdown server after 30min without requests.
+
