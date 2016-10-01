@@ -71,12 +71,13 @@ def parse_args():
 #########################################################
 class RemoteServer(object):
   def __init__(self, args):
-    self.log = Logger(RemoteServer.__name__)
+    self.log = Logger(type(self).__name__)
     self.log.info('Initing...')
     self._args = args
+    self._msgHandler = MessageHandler()
 
   def __enter__(self):
-    self.log.info('Entering...')
+    self.log.info('Initializing...')
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.bind(('', self._args.port))
     return self
@@ -90,8 +91,17 @@ class RemoteServer(object):
       connection, address = self._socket.accept()
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
-      with StreamHandler(connection) as handler:
-        handler.run()
+      with StreamHandler(connection) as streamHandler:
+        while True:
+          message = streamHandler.recvMessage()
+          if None == message:
+            break
+          else:
+            response = self._msgHandler.handleMessage(message)
+            assert response.type % 2 == 1, \
+                ('All responses must be of an odd type. '
+                    'Found type [{}] instead.').format(response.type)
+            streamHandler.sendMessage(response)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
@@ -109,10 +119,10 @@ class RemoteServer(object):
 #########################################################
 class LocalClient(object):
   def __init__(self, args):
-    self.log = Logger(LocalClient.__name__)
-    self.log.info('Initing...')
+    self.log = Logger(type(self).__name__)
+    self.log.info('Initializing...')
     self._args = args
-    self._serde = MessageSerde()
+    self._msgHandler = MessageHandler()
 
   def __enter__(self):
     self.log.info('Entering...')
@@ -128,15 +138,16 @@ class LocalClient(object):
 
   def run(self):
     self.log.info('Running...')
-    with StreamHandler(self._socket) as handler:
+    with StreamHandler(self._socket) as streamHandler:
       while True:
+        request = Message(MessageType.PING_REQUEST)
+        streamHandler.sendMessage(request)
         try:
-          handler.run()
+          response = streamHandler.recvMessage()
+          self._msgHandler.handleMessage(response)
         except socket.timeout:
           # Nothing to receive from the server.
           pass
-        msg = Message(MessageType.PING_REQUEST)
-        handler.sendMessage(msg)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.info('Exiting...')
@@ -182,36 +193,28 @@ class Logger(object):
 
 class StreamHandler(object):
   def __init__(self, socket):
-    self.log = Logger(StreamHandler.__name__)
+    self.log = Logger(type(self).__name__)
     self._socket = socket
     self._buffer = ''
     self._serde = MessageSerde()
-    self._handler = MessageHandler()
 
   def __enter__(self):
     self.log.info('Entering...')
     return self
 
-  def run(self):
+  def recvMessage(self):
     self.log.info('Running...')
     while True:
       data = self._socket.recv(1024)
       datal = len(data)
       if datal == 0:
         self.log.info('Remote client disconnected.')
-        return
+        return None
       elif datal > 0:
         self.log.info('Received [{}] bytes.'.format(datal))
         self._buffer += data
         message, unused = self._serde.deserialise(self._buffer)
         self._buffer = unused
-        if message != None:
-          response = self._handler.handleMessage(message)
-          if response != None:
-            assert response.type % 2 == 1, \
-                ('All responses must be of an odd type. '
-                    'Found type [{}] instead.').format(response.type)
-            self.sendMessage(response)
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
 
@@ -241,7 +244,7 @@ class Message(object):
 
 class MessageSerde(object):
   def __init__(self):
-    self.log = Logger(MessageSerde.__name__)
+    self.log = Logger(type(self).__name__)
 
   def serialise(self, message):
     """ Returns a list of bytes containing the serialised msg/ """
@@ -271,7 +274,7 @@ class MessageSerde(object):
 
 class MessageHandler(object):
   def __init__(self):
-    self.log = Logger(MessageHandler.__name__)
+    self.log = Logger(type(self).__name__)
 
   def handleMessage(self, message):
     self.log.info('Handling message of type: [{}]'.format(message.type))
