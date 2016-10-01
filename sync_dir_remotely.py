@@ -89,6 +89,7 @@ class RemoteServer(object):
           self._args.port))
       self._socket.listen(1)
       connection, address = self._socket.accept()
+      connection.settimeout(30.0) # seconds
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
       with StreamHandler(connection) as streamHandler:
@@ -203,7 +204,7 @@ class StreamHandler(object):
     return self
 
   def recvMessage(self):
-    self.log.info('Running...')
+    self.log.info('Receiving message...')
     while True:
       data = self._socket.recv(1024)
       datal = len(data)
@@ -214,7 +215,13 @@ class StreamHandler(object):
         self.log.info('Received [{}] bytes.'.format(datal))
         self._buffer += data
         message, unused = self._serde.deserialise(self._buffer)
+        unused_bytes = len(unused)
+        used_bytes = len(self._buffer) - unused_bytes
         self._buffer = unused
+        self.log.verbose(
+            'Received message_type=[{}] used_bytes=[{}] unused_bytes=[{}].'\
+                .format(message.type, used_bytes, unused_bytes))
+        return message
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
 
