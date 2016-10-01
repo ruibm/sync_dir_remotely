@@ -5,11 +5,11 @@ X Implement the message MessageSerde.
 X Send Ping message from LocalClient to RemoteServer.
 X Respond to Ping message from RemoteServer.
 X Create the first unit test.
-- Implement simple filesystem crawler for a directory.
-- Compute SHA1 of every file in the directory.
-- Add unit tests for crawling.
-- Check change date before deciding to compute new SHA1.
-- Compute SHA1's continuously in a background thread.
+X Implement simple filesystem crawler for a directory.
+X Compute MD5 of every file in the directory.
+X Add unit tests for crawling.
+X Check change date before deciding to compute new SHA1.
+- Compute MD5's continuously in a background thread.
 - Implement new Request type to get diff.
 - Implement new Request type to upload files.
 - Symmetric encryption with shared secret.

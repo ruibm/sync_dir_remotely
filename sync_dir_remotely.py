@@ -208,7 +208,7 @@ class StreamHandler(object):
   def recvMessage(self):
     self.log.debug('Receiving message...')
     while True:
-      data = self._socket.recv(1024)
+      data = self._socket.recv(4096)
       datal = len(data)
       if datal == 0:
         self.log.debug('Remote client disconnected.')
