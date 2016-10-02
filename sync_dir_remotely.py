@@ -102,7 +102,7 @@ class RemoteServer(object):
           self._args.port))
       self._socket.listen(1)
       connection, address = self._socket.accept()
-      # connection.settimeout(30.0) # seconds
+      connection.settimeout(SOCKET_TIMEOUT_SECS)
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
       with StreamHandler(connection) as streamHandler:
@@ -144,7 +144,7 @@ class LocalClient(object):
     self._monitor = DirMonitor(self._args.dir)
     self._monitor.start_monitoring()
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # self._socket.settimeout(1.0) # seconds
+    self._socket.settimeout(SOCKET_TIMEOUT_SECS)
     remote = self._args.remote
     port = self._args.port
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
@@ -222,7 +222,7 @@ class StreamHandler(object):
   def recvMessage(self):
     self.log.debug('Receiving message...')
     while True:
-      data = self._socket.recv(4096)
+      data = self._socket.recv(BUFFER_SIZE_BYTES)
       datal = len(data)
       if datal == 0:
         self.log.debug('Remote client disconnected.')
@@ -358,7 +358,7 @@ class DirCrawler(object):
   def md5_hash(file_path):
     md5_hash = hashlib.md5()
     with open(file_path, "rb") as f:
-      for fragment in iter(lambda: f.read(4096), b''):
+      for fragment in iter(lambda: f.read(BUFFER_SIZE_BYTES), b''):
         md5_hash.update(fragment)
     return md5_hash.hexdigest()
 
@@ -401,6 +401,8 @@ class DirMonitor(object):
 #########################################################
 # Constants
 #########################################################
+SOCKET_TIMEOUT_SECS = 30.0
+BUFFER_SIZE_BYTES = 4 * 1024
 LOG_LEVELS = ('error', 'warn', 'info', 'debug')
 LOG = Logger('main')
 

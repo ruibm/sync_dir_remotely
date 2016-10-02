@@ -9,7 +9,8 @@ X Implement simple filesystem crawler for a directory.
 X Compute MD5 of every file in the directory.
 X Add unit tests for crawling.
 X Check change date before deciding to compute new SHA1.
-- Compute MD5's continuously in a background thread.
+X Compute MD5's continuously in a background thread.
+- Implement monitoring multiple directories.
 - Implement new Request type to get diff.
 - Implement new Request type to upload files.
 - Symmetric encryption with shared secret.
