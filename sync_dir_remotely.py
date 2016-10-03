@@ -1,11 +1,12 @@
 #!/usr/bin/python2.7
 #
-# This program continuously one-way synchronises one local directory
+# This program continuously one-way synchronises local directories
 # into a remote machine.
 #
 # LocalClient ==> RemoteServer
 #
 # Usage:
+#
 #
 
 #########################################################
@@ -68,10 +69,10 @@ def parse_args():
 
   parser.add_argument(
       '-d',
-      '--dir',
+      '--dirs',
       required=True,
       type=str,
-      help='The directory to keep in sync.',
+      help='Directories to keep in sync.',
   )
 
   args = parser.parse_args()
@@ -85,12 +86,12 @@ def parse_args():
 class RemoteServer(object):
   def __init__(self, args):
     self.log = Logger(type(self).__name__)
-    self.log.debug('Initing...')
+    self.log.debug('Initializing...')
     self._args = args
     self._msgHandler = MessageHandler()
 
   def __enter__(self):
-    self.log.debug('Initializing...')
+    self.log.debug('Entering...')
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.bind(('', self._args.port))
     return self
@@ -365,6 +366,7 @@ class DirCrawler(object):
   def _is_excluded(self, path):
     for regex in self._excludes:
       if None != regex.match(path):
+        print path
         return True
     return False
 

@@ -60,7 +60,7 @@ class DirCrawlerTest(unittest.TestCase):
           files[file_path]['md5'])
 
   def test_buck_folder(self):
-    crawler = DirCrawler('~/buck/', [r'.*/\..*'])
+    crawler = DirCrawler('~/buck/', [r'.*/\..*', r'.*third-party/.*'])
     files = crawler.crawl_and_hash()
     files = crawler.crawl_and_hash(files)
     self.assertEqual(2, len(files))
