@@ -109,16 +109,20 @@ class RemoteServer(object):
           str(address)))
       with StreamHandler(connection) as streamHandler:
         while True:
-          message = streamHandler.recvMessage()
-          if None == message:
-            self.log.info('Remote client disconnected.')
+          try:
+            message = streamHandler.recvMessage()
+            if None == message:
+              self.log.info('Remote client disconnected.')
+              break
+            else:
+              response = self._msgHandler.handleMessage(message)
+              assert response.type % 2 == 1, \
+                  ('All responses must be of an odd type. '
+                      'Found type [{}] instead.').format(response.type)
+              streamHandler.sendMessage(response)
+          except socket.timeout:
+            self.log.warn('Socket timed out. Closing the connection.')
             break
-          else:
-            response = self._msgHandler.handleMessage(message)
-            assert response.type % 2 == 1, \
-                ('All responses must be of an odd type. '
-                    'Found type [{}] instead.').format(response.type)
-            streamHandler.sendMessage(response)
 
   def __exit__(self, exc_type, exc_value, traceback):
     self.log.debug('Exiting...')
@@ -145,6 +149,29 @@ class LocalClient(object):
     self.log.debug('Entering...')
     self._monitor = DirMonitor(self._args.dirs)
     self._monitor.start_monitoring()
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    self.log.debug('Exiting...')
+    self._disconnect()
+    if self._monitor:
+      self._monitor.stop_monitoring()
+      self._monitor = None
+
+  def run(self):
+    self.log.debug('Running...')
+    while True:
+      try:
+        self._connect()
+        self._process_messages()
+      except socket.timeout:
+        self.log.warn('Socket timed out. Closing the connection.')
+      except socket.error:
+        self.log.warn('Unexpected socket exception. Closing connection.')
+      finally:
+        self._disconnect()
+
+  def _connect(self):
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.settimeout(SOCKET_TIMEOUT_SECS)
     remote = self._args.remote
@@ -152,26 +179,16 @@ class LocalClient(object):
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
     self._socket.connect((remote, port))
     self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
-    return self
 
-  def run(self):
-    self.log.debug('Running...')
+  def _process_messages(self):
     with StreamHandler(self._socket) as streamHandler:
       while True:
         request = Message(MessageType.PING_REQUEST)
         # streamHandler.sendMessage(request)
-        try:
-          response = streamHandler.recvMessage()
-          self._msgHandler.handleMessage(response)
-        except socket.timeout:
-          # Nothing to receive from the server.
-          pass
+        response = streamHandler.recvMessage()
+        self._msgHandler.handleMessage(response)
 
-  def __exit__(self, exc_type, exc_value, traceback):
-    self.log.debug('Exiting...')
-    if self._monitor:
-      self._monitor.stop_monitoring()
-      self._monitor = None
+  def _disconnect(self):
     if self._socket:
       self._socket.close()
       self._socket = None
@@ -416,7 +433,7 @@ class DirMonitor(object):
 #########################################################
 # Constants
 #########################################################
-SOCKET_TIMEOUT_SECS = 30.0
+SOCKET_TIMEOUT_SECS = 5.0
 BUFFER_SIZE_BYTES = 4 * 1024
 LOG_LEVELS = ('error', 'warn', 'info', 'debug')
 LOG = Logger('main')
