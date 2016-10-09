@@ -72,6 +72,7 @@ def parse_args():
       '--dirs',
       required=True,
       type=str,
+      nargs='+',
       help='Directories to keep in sync.',
   )
 
@@ -142,7 +143,7 @@ class LocalClient(object):
 
   def __enter__(self):
     self.log.debug('Entering...')
-    self._monitor = DirMonitor(self._args.dir)
+    self._monitor = DirMonitor(self._args.dirs)
     self._monitor.start_monitoring()
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     self._socket.settimeout(SOCKET_TIMEOUT_SECS)
@@ -372,10 +373,13 @@ class DirCrawler(object):
 
 
 class DirMonitor(object):
-  def __init__(self, dir_to_monitor):
+  def __init__(self, root_dirs):
     self.log = Logger(type(self).__name__)
-    self._crawler = DirCrawler(dir_to_monitor)
-    self.files = self._crawler.crawl_and_hash()
+    self._crawlers = []
+    for root in root_dirs:
+      self._crawlers.append(DirCrawler(root))
+    self.files = [list() for i in range(len(self._crawlers))]
+    self._crawl_all()
 
   def start_monitoring(self):
     self._thread = threading.Thread(
@@ -394,9 +398,18 @@ class DirMonitor(object):
     self.log.info('Monitoring thread is running...')
     while self._is_monitoring:
       self.log.info('Monitor knows of [{}] files.'.format(len(self.files)))
-      self.files = self._crawler.crawl_and_hash(self.files)
+      self._crawl_all()
       time.sleep(5.0)
     self.log.info('Monitoring thread is exiting.')
+
+  def _crawl_all(self):
+    files = []
+    for i in range(len(self._crawlers)):
+      crawler = self._crawlers[i]
+      previous = self.files[i]
+      files.append(crawler.crawl_and_hash(previous))
+    self.files = files
+
 
 
 
