@@ -348,11 +348,18 @@ class DirCrawler(object):
         rel_path = os.path.join(root, f)
         if not self._is_excluded(rel_path):
           all_files.append(rel_path)
-    self.log.debug('Crawl found a total of [{}] files...'.format(len(all_files)))
+    self.log.debug(
+        'Crawl found a total of [{}] files...'.format(len(all_files)))
     return all_files
 
   def crawl_and_hash(self, previous_results={}):
-    '''Returns a dict with keyed off file_rel_path with md5_hash information.'''
+    '''Returns a dict with keyed off file_rel_path with md5_hash information.
+
+      Each dict key refers to the relative path of a file.
+      Each dict value contains a tuple with two elements:
+      1. Epoch modified time.
+      2. MD5 hash of the contents of the file.
+    '''
     all_files = self.crawl()
     self.log.debug('Computing the md5 hash for [{}] files...'\
         .format(len(all_files)))

@@ -57,16 +57,13 @@ class DirCrawlerTest(unittest.TestCase):
     self.assertEqual(2, len(files))
     for file_path in files:
       self.assertEqual('0af9f1702bc23d5a33268e2755457773',
-          files[file_path]['md5'])
+          files[file_path][1])
 
   def test_buck_folder(self):
-    crawler = DirCrawler('~/buck/', [r'.*/\..*', r'.*third-party/.*'])
+    crawler = DirCrawler('~/buck/src', [r'.*/\..*', r'.*third-party/.*'])
     files = crawler.crawl_and_hash()
     files = crawler.crawl_and_hash(files)
-    self.assertEqual(2, len(files))
-    for file_path in files:
-      self.assertEqual('0af9f1702bc23d5a33268e2755457773',
-          files[file_path]['md5'])
+    self.assertEqual(2291, len(files))
 
 
 
