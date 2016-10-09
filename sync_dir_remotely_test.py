@@ -66,6 +66,58 @@ class DirCrawlerTest(unittest.TestCase):
     self.assertEqual(2291, len(files))
 
 
+class StateDifferTest(unittest.TestCase):
+  def test_one_dir_one_file_no_diff(self):
+    src = (
+      { 'my_file.txt': (0, 'super md5')},
+    )
+    dst = (
+      { 'my_file.txt': (0, 'super md5')},
+    )
+    differ = StateDiffer()
+    result = differ.diff(src, dst)
+    self.assertEqual(1, len(result))
+    self.assertEqual(0, len(result[0]))
+
+  def test_one_dir_one_file_diff_md5(self):
+    src = (
+      { 'my_file.txt': (0, 'super md5')},
+    )
+    dst = (
+      { 'my_file.txt': (0, 'different md5')},
+    )
+    differ = StateDiffer()
+    result = differ.diff(src, dst)
+    self.assertEqual(1, len(result))
+    self.assertEqual(1, len(result[0]))
+    self.assertEqual('my_file.txt', result[0][0])
+
+  def test_one_dir_one_file_does_not_exist_in_dst(self):
+    src = (
+      { 'my_file.txt': (0, 'super md5')},
+    )
+    dst = (
+      {},
+    )
+    differ = StateDiffer()
+    result = differ.diff(src, dst)
+    self.assertEqual(1, len(result))
+    self.assertEqual(1, len(result[0]))
+    self.assertEqual('my_file.txt', result[0][0])
+
+  def test_one_dir_one_file_does_not_exist_in_src(self):
+    src = (
+      {},
+    )
+    dst = (
+      { 'my_file.txt': (0, 'different md5')},
+    )
+    differ = StateDiffer()
+    result = differ.diff(src, dst)
+    self.assertEqual(1, len(result))
+    self.assertEqual(0, len(result[0]))
+
+
 
 #########################################################
 # Constants

@@ -10,8 +10,8 @@ X Compute MD5 of every file in the directory.
 X Add unit tests for crawling.
 X Check change date before deciding to compute new SHA1.
 X Compute MD5's continuously in a background thread.
-- Implement monitoring multiple directories.
-- Get rid of the regex exclude_list.
+X Implement monitoring multiple directories.
+X Get rid of the regex exclude_list. (code is around but not exposed)
 - Implement new Request type to get diff.
 - Implement new Request type to upload files.
 - Symmetric encryption with shared secret.

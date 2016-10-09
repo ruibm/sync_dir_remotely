@@ -80,121 +80,6 @@ def parse_args():
   return args
 
 
-
-#########################################################
-# Remote Server Classes
-#########################################################
-class RemoteServer(object):
-  def __init__(self, args):
-    self.log = Logger(type(self).__name__)
-    self.log.debug('Initializing...')
-    self._args = args
-    self._msgHandler = MessageHandler()
-
-  def __enter__(self):
-    self.log.debug('Entering...')
-    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self._socket.bind(('', self._args.port))
-    return self
-
-  def run(self):
-    self.log.debug('Running...')
-    while True:
-      self.log.info('Listening for incoming connections in port [{}]...'.format(
-          self._args.port))
-      self._socket.listen(1)
-      connection, address = self._socket.accept()
-      connection.settimeout(SOCKET_TIMEOUT_SECS)
-      self.log.info('Accepted connection from address: [{}]'.format(
-          str(address)))
-      with StreamHandler(connection) as streamHandler:
-        while True:
-          try:
-            message = streamHandler.recvMessage()
-            if None == message:
-              self.log.info('Remote client disconnected.')
-              break
-            else:
-              response = self._msgHandler.handleMessage(message)
-              assert response.type % 2 == 1, \
-                  ('All responses must be of an odd type. '
-                      'Found type [{}] instead.').format(response.type)
-              streamHandler.sendMessage(response)
-          except socket.timeout:
-            self.log.warn('Socket timed out. Closing the connection.')
-            break
-
-  def __exit__(self, exc_type, exc_value, traceback):
-    self.log.debug('Exiting...')
-    if exc_type and exc_value and traceback:
-      self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
-          .format(exc_type, exc_value, traceback))
-    if self._socket:
-      self._socket.close()
-      self._socket = None
-
-
-
-#########################################################
-# Local Client Classes
-#########################################################
-class LocalClient(object):
-  def __init__(self, args):
-    self.log = Logger(type(self).__name__)
-    self.log.debug('Initializing...')
-    self._args = args
-    self._msgHandler = MessageHandler()
-
-  def __enter__(self):
-    self.log.debug('Entering...')
-    self._monitor = DirMonitor(self._args.dirs)
-    self._monitor.start_monitoring()
-    return self
-
-  def __exit__(self, exc_type, exc_value, traceback):
-    self.log.debug('Exiting...')
-    self._disconnect()
-    if self._monitor:
-      self._monitor.stop_monitoring()
-      self._monitor = None
-
-  def run(self):
-    self.log.debug('Running...')
-    while True:
-      try:
-        self._connect()
-        self._process_messages()
-      except socket.timeout:
-        self.log.warn('Socket timed out. Closing the connection.')
-      except socket.error:
-        self.log.warn('Unexpected socket exception. Closing connection.')
-      finally:
-        self._disconnect()
-
-  def _connect(self):
-    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    self._socket.settimeout(SOCKET_TIMEOUT_SECS)
-    remote = self._args.remote
-    port = self._args.port
-    self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
-    self._socket.connect((remote, port))
-    self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
-
-  def _process_messages(self):
-    with StreamHandler(self._socket) as streamHandler:
-      while True:
-        request = Message(MessageType.PING_REQUEST)
-        # streamHandler.sendMessage(request)
-        response = streamHandler.recvMessage()
-        self._msgHandler.handleMessage(response)
-
-  def _disconnect(self):
-    if self._socket:
-      self._socket.close()
-      self._socket = None
-
-
-
 #########################################################
 # Common Classes
 #########################################################
@@ -224,7 +109,7 @@ class Logger(object):
         .strftime('%Y-%m-%d %H:%M:%S.%f')
     if level >= 0 and level < len(LOG_LEVELS):
       level = LOG_LEVELS[level].upper()[0]
-    print '[{}][{}]<{}> {}'.format(level, ts, self._name, msg)
+    print('[{}][{}]<{}> {}'.format(level, ts, self._name, msg))
 
 
 class StreamHandler(object):
@@ -277,6 +162,11 @@ class MessageType(object):
   """ All Response types must be odd numbered """
   PING_REQUEST = 0
   PING_RESPONSE = 1
+  DIFF_REQUEST = 2
+  DIFF_RESPONSE = 3
+  UPLOAD_REQUEST = 4
+  UPLOAD_RESPONSE = 5
+
 
 class Message(object):
   def __init__(self, message_type):
@@ -318,15 +208,8 @@ class MessageHandler(object):
   def __init__(self):
     self.log = Logger(type(self).__name__)
 
-  def handleMessage(self, message):
-    self.log.debug('Handling message of type: [{}]'.format(message.type))
-    # Odd numbered MessageType's are responses.
-    if message.type % 2 == 1:
-      return None
-    # TODO(ruibm): Do the proper thing instead of just mirroring.
-    response = Message(MessageType.PING_RESPONSE)
-    self.log.debug("Responding with message of type: [{}]".format(response.type))
-    return response
+  def handle_message(self, message):
+    raise error('Method not implemented')
 
 
 class DirCrawler(object):
@@ -355,10 +238,10 @@ class DirCrawler(object):
   def crawl_and_hash(self, previous_results={}):
     '''Returns a dict with keyed off file_rel_path with md5_hash information.
 
-      Each dict key refers to the relative path of a file.
-      Each dict value contains a tuple with two elements:
-      1. Epoch modified time.
-      2. MD5 hash of the contents of the file.
+    Each dict key refers to the relative path of a file.
+    Each dict value contains a tuple with two elements:
+    1. Epoch modified time.
+    2. MD5 hash of the contents of the file.
     '''
     all_files = self.crawl()
     self.log.debug('Computing the md5 hash for [{}] files...'\
@@ -391,7 +274,7 @@ class DirCrawler(object):
   def _is_excluded(self, path):
     for regex in self._excludes:
       if None != regex.match(path):
-        print path
+        # print path
         return True
     return False
 
@@ -411,12 +294,14 @@ class DirMonitor(object):
     self._thread.daemon = True
     self._is_monitoring = True
     self._thread.start()
+    return self
 
   def stop_monitoring(self):
     self._is_monitoring = False
     if self._thread:
       # self._thread.join()
       self._thread = None
+    return self
 
   def _thread_main(self):
     self.log.info('Monitoring thread is running...')
@@ -434,6 +319,173 @@ class DirMonitor(object):
       files.append(crawler.crawl_and_hash(previous))
     self.files = files
 
+
+class StateDiffer(object):
+  def __init__(self):
+    pass
+
+  def diff(self, src, dst):
+    '''Returns all files from src that need to be uploaded to dst
+
+    Both [src] and [dst] should be lists containing dict() with the same
+    exact format as returned from the DirCrawler.crawl_and_hash() method.
+
+    Returns a tuple. Each position contains the files that need to be uploaded
+    for that same index in [src].
+    '''
+    # Always return no diff
+    assert len(src) == len(dst), \
+        ('Both local and remote need to be monitoring the same amount of '
+            'dirs. local_dirs=[{}] remote_dirs=[{}]').format(len(src), len(dst))
+    dir_count = len(src)
+    results = []
+    for i in range(dir_count):
+      src_dir = src[i]
+      dst_dir = dst[i]
+      current_diff = []
+      results.append(current_diff)
+      for path, (mtime, md5_hash) in src_dir.items():
+        if path not in dst_dir or md5_hash != dst_dir[path][1]:
+          current_diff.append(path)
+    return results
+
+
+
+#########################################################
+# Remote Server Classes
+#########################################################
+class RemoteServer(object):
+  def __init__(self, args):
+    self.log = Logger(type(self).__name__)
+    self.log.debug('Initializing...')
+    self._args = args
+    self._monitor = DirMonitor(args.dirs)
+    self._msgHandler = RemoteMessageHandler()
+
+  def __enter__(self):
+    self.log.debug('Entering...')
+    self._monitor.start_monitoring()
+    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket.bind(('', self._args.port))
+    return self
+
+  def run(self):
+    self.log.debug('Running...')
+    while True:
+      self.log.info('Listening for incoming connections in port [{}]...'.format(
+          self._args.port))
+      self._socket.listen(1)
+      connection, address = self._socket.accept()
+      connection.settimeout(SOCKET_TIMEOUT_SECS)
+      self.log.info('Accepted connection from address: [{}]'.format(
+          str(address)))
+      with StreamHandler(connection) as streamHandler:
+        while True:
+          try:
+            message = streamHandler.recvMessage()
+            if None == message:
+              self.log.info('Remote client disconnected.')
+              break
+            else:
+              response = self._msgHandler.handleMessage(message)
+              assert response.type % 2 == 1, \
+                  ('All responses must be of an odd type. '
+                      'Found type [{}] instead.').format(response.type)
+              streamHandler.sendMessage(response)
+          except socket.timeout:
+            self.log.warn('Socket timed out. Closing the connection.')
+            break
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    self.log.debug('Exiting...')
+    if exc_type and exc_value and traceback:
+      self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
+          .format(exc_type, exc_value, traceback))
+    if self._socket:
+      self._socket.close()
+      self._socket = None
+    if self._monitor:
+      self._monitor.start_monitoring()
+      self._monitor = None
+
+
+
+class RemoteMessageHandler(MessageHandler):
+  def __init__(self, monitor):
+    MessageHandler.__init__(self)
+    self._monitor = monitor
+
+  def handle_message(self, message):
+    self.log.info(
+        'RemoteMessageHandler received message of type [{}].'.format(message.type))
+
+
+#########################################################
+# Local Client Classes
+#########################################################
+class LocalClient(object):
+  def __init__(self, args):
+    self.log = Logger(type(self).__name__)
+    self.log.debug('Initializing...')
+    self._args = args
+    self._msgHandler = LocalMessageHandler()
+
+  def __enter__(self):
+    self.log.debug('Entering...')
+    self._monitor = DirMonitor(self._args.dirs)
+    self._monitor.start_monitoring()
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    self.log.debug('Exiting...')
+    self._disconnect()
+    if self._monitor:
+      self._monitor.stop_monitoring()
+      self._monitor = None
+
+  def run(self):
+    self.log.debug('Running...')
+    while True:
+      try:
+        self._connect()
+        self._process_messages()
+      except socket.timeout:
+        self.log.warn('Socket timed out. Closing the connection.')
+      except socket.error:
+        self.log.warn('Unexpected socket exception. Closing connection.')
+      finally:
+        self._disconnect()
+
+  def _connect(self):
+    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket.settimeout(SOCKET_TIMEOUT_SECS)
+    remote = self._args.remote
+    port = self._args.port
+    self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
+    self._socket.connect((remote, port))
+    self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
+
+  def _process_messages(self):
+    with StreamHandler(self._socket) as streamHandler:
+      while True:
+        request = Message(MessageType.PING_REQUEST)
+        # streamHandler.sendMessage(request)
+        response = streamHandler.recvMessage()
+        self._msgHandler.handleMessage(response)
+
+  def _disconnect(self):
+    if self._socket:
+      self._socket.close()
+      self._socket = None
+
+
+class LocalMessageHandler(MessageHandler):
+  def __init__(self):
+    MessageHandler.__init__(self)
+
+  def handle_message(self, message):
+    self.log.info(
+        'LocalClient received message of type [{}].'.format(message.type))
 
 
 
