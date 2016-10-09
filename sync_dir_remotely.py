@@ -129,8 +129,9 @@ class StreamHandler(object):
       data = self._socket.recv(BUFFER_SIZE_BYTES)
       datal = len(data)
       if datal == 0:
-        self.log.debug('Remote client disconnected.')
-        return None
+        msg = 'Remote client disconnected.'
+        self.log.debug(msg)
+        raise socket.error(msg)
       elif datal > 0:
         self.log.debug('Received [{}] bytes.'.format(datal))
         self._buffer += data
@@ -138,6 +139,8 @@ class StreamHandler(object):
         unused_bytes = len(unused)
         used_bytes = len(self._buffer) - unused_bytes
         self._buffer = unused
+        if message == None:
+          continue
         self.log.debug(
             'Received message_type=[{}] used_bytes=[{}] unused_bytes=[{}].'\
                 .format(message.type, used_bytes, unused_bytes))
@@ -282,6 +285,7 @@ class DirCrawler(object):
 class DirMonitor(object):
   def __init__(self, root_dirs):
     self.log = Logger(type(self).__name__)
+    self.dirs = root_dirs
     self._crawlers = []
     for root in root_dirs:
       self._crawlers.append(DirCrawler(root))
@@ -360,7 +364,7 @@ class RemoteServer(object):
     self.log.debug('Initializing...')
     self._args = args
     self._monitor = DirMonitor(args.dirs)
-    self._msgHandler = RemoteMessageHandler()
+    self._msg_handler = RemoteMessageHandler(self._monitor)
 
   def __enter__(self):
     self.log.debug('Entering...')
@@ -382,18 +386,17 @@ class RemoteServer(object):
       with StreamHandler(connection) as streamHandler:
         while True:
           try:
-            message = streamHandler.recvMessage()
-            if None == message:
-              self.log.info('Remote client disconnected.')
-              break
-            else:
-              response = self._msgHandler.handleMessage(message)
-              assert response.type % 2 == 1, \
-                  ('All responses must be of an odd type. '
-                      'Found type [{}] instead.').format(response.type)
-              streamHandler.sendMessage(response)
+            request = streamHandler.recvMessage()
+            response = self._msg_handler.handle_message(request)
+            assert response.type % 2 == 1, \
+                ('All responses must be of an odd type. '
+                    'Found type [{}] instead.').format(response.type)
+            streamHandler.sendMessage(response)
           except socket.timeout:
             self.log.warn('Socket timed out. Closing the connection.')
+            break
+          except socket.error:
+            self.log.warn('Remote client disconneded. Closing the connection.')
             break
 
   def __exit__(self, exc_type, exc_value, traceback):
@@ -416,8 +419,11 @@ class RemoteMessageHandler(MessageHandler):
     self._monitor = monitor
 
   def handle_message(self, message):
-    self.log.info(
-        'RemoteMessageHandler received message of type [{}].'.format(message.type))
+    self.log.info('RemoteMessageHandler received message of type [{}].'\
+        .format(message.type))
+    response = Message(MessageType.PING_RESPONSE)
+    response.body['rui'] = 'Error'
+    return response
 
 
 #########################################################
@@ -428,7 +434,6 @@ class LocalClient(object):
     self.log = Logger(type(self).__name__)
     self.log.debug('Initializing...')
     self._args = args
-    self._msgHandler = LocalMessageHandler()
 
   def __enter__(self):
     self.log.debug('Entering...')
@@ -466,12 +471,11 @@ class LocalClient(object):
     self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
 
   def _process_messages(self):
-    with StreamHandler(self._socket) as streamHandler:
+    with StreamHandler(self._socket) as stream_handler:
+      uploader = FileUploader(self._monitor, stream_handler)
       while True:
-        request = Message(MessageType.PING_REQUEST)
-        # streamHandler.sendMessage(request)
-        response = streamHandler.recvMessage()
-        self._msgHandler.handleMessage(response)
+        uploader.upload_files()
+        time.sleep(3.0)
 
   def _disconnect(self):
     if self._socket:
@@ -479,13 +483,38 @@ class LocalClient(object):
       self._socket = None
 
 
-class LocalMessageHandler(MessageHandler):
-  def __init__(self):
-    MessageHandler.__init__(self)
+class FileUploader(object):
+  def __init__(self, monitor, stream_handler):
+    self.log = Logger(type(self).__name__)
+    self._monitor = monitor
+    self._handler = stream_handler
 
-  def handle_message(self, message):
-    self.log.info(
-        'LocalClient received message of type [{}].'.format(message.type))
+  def upload_files(self):
+    # DIFF_REQUEST
+    diff_request = Message(MessageType.DIFF_REQUEST)
+    diff_request.body['files'] = self._monitor.files
+    self._handler.sendMessage(diff_request)
+    diff_response = self._handler.recvMessage()
+    files = diff_response.body['diff']
+    # UPLOAD_REQUEST
+    upload_request = Message(MessageType.UPLOAD_REQUEST)
+    upload_request.body['files_to_upload'] = self._files_to_upload(files)
+    upload_response = self._handler.sendMessage(upload_request)
+
+  def _files_to_upload(self, files):
+    results = []
+    for dir_index in range(len(files)):
+      local_root = self._dirs[dir_index]
+      files_per_dir = files[dir_index]
+      current = {}
+      results.append(current)
+      for rel_path in files_per_dir:
+        abs_path = os.path.join(local_root, rel_path)
+        with open(abs_path, 'r') as fp:
+          content = fp.read()
+        content = base64.b64encode(content)
+        current[rel_path] = content
+    return results
 
 
 
@@ -493,7 +522,7 @@ class LocalMessageHandler(MessageHandler):
 # Constants
 #########################################################
 SOCKET_TIMEOUT_SECS = 5.0
-BUFFER_SIZE_BYTES = 4 * 1024
+BUFFER_SIZE_BYTES = 1024 * 1024
 LOG_LEVELS = ('error', 'warn', 'info', 'debug')
 LOG = Logger('main')
 

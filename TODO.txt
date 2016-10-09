@@ -12,8 +12,10 @@ X Check change date before deciding to compute new SHA1.
 X Compute MD5's continuously in a background thread.
 X Implement monitoring multiple directories.
 X Get rid of the regex exclude_list. (code is around but not exposed)
-- Implement new Request type to get diff.
-- Implement new Request type to upload files.
+X Implement new Request type to get diff on Local.
+X Implement new Request type to upload files on Local.
+- Implement new Request type to get diff on Remote.
+- Implement new Request type to upload files on Remote.
 - Symmetric encryption with shared secret.
 - Auto shutdown server after 30min without requests.
 
