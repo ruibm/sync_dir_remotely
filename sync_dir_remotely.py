@@ -13,6 +13,7 @@
 # Imports
 #########################################################
 import argparse
+import base64
 import copy # copy.deepcopy(x)
 import datetime
 import hashlib
@@ -176,6 +177,10 @@ class Message(object):
     self.type = message_type
     self.body = {}
 
+  def __str__(self):
+    return 'Message(type=[{}] body=[{}])'\
+        .format(self.type, json.dumps(self.body))
+
 
 class MessageSerde(object):
   def __init__(self):
@@ -291,6 +296,12 @@ class DirMonitor(object):
       self._crawlers.append(DirCrawler(root))
     self.files = [list() for i in range(len(self._crawlers))]
     self._crawl_all()
+
+  def get_dirs(self):
+    return self.dirs
+
+  def get_files(self):
+    return self.files
 
   def start_monitoring(self):
     self._thread = threading.Thread(
@@ -412,18 +423,35 @@ class RemoteServer(object):
       self._monitor = None
 
 
-
 class RemoteMessageHandler(MessageHandler):
   def __init__(self, monitor):
     MessageHandler.__init__(self)
     self._monitor = monitor
+    self._differ = StateDiffer()
 
-  def handle_message(self, message):
+  def handle_message(self, req):
+    resp = None
     self.log.info('RemoteMessageHandler received message of type [{}].'\
-        .format(message.type))
-    response = Message(MessageType.PING_RESPONSE)
-    response.body['rui'] = 'Error'
-    return response
+        .format(req.type))
+    # MessageType.PING_REQUEST
+    if req.type == MessageType.PING_REQUEST:
+      resp = Message(MessageType.PING_RESPONSE)
+    # MessageType.DIFF_REQUEST
+    elif req.type == MessageType.DIFF_REQUEST:
+      resp = Message(MessageType.DIFF_RESPONSE)
+      diff = self._differ.diff(req.body['files'], self._monitor.get_files())
+      resp.body['diff'] = diff
+      self.log.debug(str(resp))
+    # MessageType.UPLOAD_REQUEST
+    elif req.type == MessageType.UPLOAD_REQUEST:
+      resp = Message(MessageType.UPLOAD_RESPONSE)
+    else:
+      err = ('No idea how to handle MessageType=[{}] so '
+             'aborting connection.').format(message.type)
+      self.log.error(err)
+      raise error(err)
+    self.log.info('Responding with MessageType=[{}].'.format(resp.type))
+    return resp
 
 
 #########################################################
@@ -460,6 +488,7 @@ class LocalClient(object):
         self.log.warn('Unexpected socket exception. Closing connection.')
       finally:
         self._disconnect()
+      time.sleep(1.0)
 
   def _connect(self):
     self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -495,16 +524,21 @@ class FileUploader(object):
     diff_request.body['files'] = self._monitor.files
     self._handler.sendMessage(diff_request)
     diff_response = self._handler.recvMessage()
+    self.log.debug(str(diff_response))
     files = diff_response.body['diff']
+    self.log.info('A total of [{0}] files need to be uploaded.'\
+        .format(len(files[0])))
     # UPLOAD_REQUEST
     upload_request = Message(MessageType.UPLOAD_REQUEST)
-    upload_request.body['files_to_upload'] = self._files_to_upload(files)
-    upload_response = self._handler.sendMessage(upload_request)
+    upload_request.body['uploaded_files'] = self._files_to_upload(files)
+    self._handler.sendMessage(upload_request)
+    upload_response = self._handler.recvMessage()
 
   def _files_to_upload(self, files):
     results = []
+    dirs = self._monitor.get_dirs()
     for dir_index in range(len(files)):
-      local_root = self._dirs[dir_index]
+      local_root = dirs[dir_index]
       files_per_dir = files[dir_index]
       current = {}
       results.append(current)
