@@ -144,7 +144,7 @@ class StreamHandler(object):
           continue
         self.log.debug(
             'Received message_type=[{}] used_bytes=[{}] unused_bytes=[{}].'\
-                .format(message.type, used_bytes, unused_bytes))
+                .format(message.type_str(), used_bytes, unused_bytes))
         return message
       else:
         assert False, 'Should never get here!!! recv_bytes=[{}]'.format(datal)
@@ -158,7 +158,7 @@ class StreamHandler(object):
   def sendMessage(self, message):
     data = self._serde.serialise(message)
     self.log.debug('Sending message of type [{}] and size [{}] bytes...'\
-        .format(message.type, len(data)))
+        .format(message.type_str(), len(data)))
     self._socket.sendall(data)
 
 
@@ -171,6 +171,29 @@ class MessageType(object):
   UPLOAD_REQUEST = 4
   UPLOAD_RESPONSE = 5
 
+  @staticmethod
+  def to_str(type_int):
+    assert type(type_int) == int, type_int
+    if type_int == MessageType.PING_REQUEST:
+      return 'PING_REQUEST'
+    elif type_int == MessageType.PING_RESPONSE:
+      return 'PING_RESPONSE'
+    elif type_int == MessageType.DIFF_REQUEST:
+      return 'DIFF_REQUEST'
+    elif type_int == MessageType.DIFF_RESPONSE:
+      return 'DIFF_RESPONSE'
+    elif type_int == MessageType.UPLOAD_REQUEST:
+      return 'UPLOAD_REQUEST'
+    elif type_int == MessageType.UPLOAD_RESPONSE:
+      return 'UPLOAD_RESPONSE'
+    else:
+      return 'UNKNOWN'
+
+  @staticmethod
+  def to_pretty_str(type_int):
+    return '{}({})'.format(MessageType.to_str(type_int), type_int)
+
+
 
 class Message(object):
   def __init__(self, message_type):
@@ -179,7 +202,10 @@ class Message(object):
 
   def __str__(self):
     return 'Message(type=[{}] body=[{}])'\
-        .format(self.type, json.dumps(self.body))
+        .format(self.type_str(), json.dumps(self.body))
+
+  def type_str(self):
+    return MessageType.to_pretty_str(self.type)
 
 
 class MessageSerde(object):
@@ -252,14 +278,14 @@ class DirCrawler(object):
     computed_md5s = 0
     reused_md5s = 0
     for rel_path in all_files:
-      file_path = os.path.join(self._dir, rel_path)
-      mtime = os.path.getmtime(file_path)
-      if file_path in previous_results and \
-          previous_results[file_path][0] >= mtime:
+      abs_path = os.path.join(self._dir, rel_path)
+      mtime = os.path.getmtime(abs_path)
+      if rel_path in previous_results and \
+          previous_results[rel_path][0] >= mtime:
         reused_md5s += 1
-        data[file_path] = previous_results[file_path]
+        data[rel_path] = previous_results[rel_path]
       else:
-        md5 = DirCrawler.md5_hash(file_path)
+        md5 = DirCrawler.md5_hash(abs_path)
         computed_md5s += 1
         data[rel_path] = (mtime, md5)
     self.log.info('Finished computing all [{}] md5s and reused [{}].'.format(
@@ -397,7 +423,7 @@ class RemoteServer(object):
             response = self._msg_handler.handle_message(request)
             assert response.type % 2 == 1, \
                 ('All responses must be of an odd type. '
-                    'Found type [{}] instead.').format(response.type)
+                    'Found type [{}] instead.').format(response.type_str())
             streamHandler.sendMessage(response)
           except socket.timeout:
             self.log.warn('Socket timed out. Closing the connection.')
@@ -454,7 +480,7 @@ class RemoteMessageHandler(object):
   def handle_message(self, req):
     resp = None
     self.log.info('RemoteMessageHandler received message of type [{}].'\
-        .format(req.type))
+        .format(req.type_str()))
     # MessageType.PING_REQUEST
     if req.type == MessageType.PING_REQUEST:
       resp = Message(MessageType.PING_RESPONSE)
@@ -463,7 +489,6 @@ class RemoteMessageHandler(object):
       resp = Message(MessageType.DIFF_RESPONSE)
       diff = self._differ.diff(req.body['files'], self._monitor.get_files())
       resp.body['diff'] = diff
-      self.log.debug(str(resp))
     # MessageType.UPLOAD_REQUEST
     elif req.type == MessageType.UPLOAD_REQUEST:
       uploaded_files = req.body['uploaded_files']
@@ -471,10 +496,10 @@ class RemoteMessageHandler(object):
       resp = Message(MessageType.UPLOAD_RESPONSE)
     else:
       err = ('No idea how to handle MessageType=[{}] so '
-             'aborting connection.').format(message.type)
+             'aborting connection.').format(message.type_str())
       self.log.error(err)
       raise error(err)
-    self.log.info('Responding with MessageType=[{}].'.format(resp.type))
+    self.log.info('Responding with MessageType=[{}].'.format(resp.type_str()))
     return resp
 
 
@@ -548,7 +573,6 @@ class FileUploader(object):
     diff_request.body['files'] = self._monitor.files
     self._handler.sendMessage(diff_request)
     diff_response = self._handler.recvMessage()
-    self.log.debug(str(diff_response))
     files = diff_response.body['diff']
     self.log.info('A total of [{0}] files need to be uploaded.'\
         .format(len(files[0])))
