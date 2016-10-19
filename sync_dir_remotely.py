@@ -212,14 +212,6 @@ class MessageSerde(object):
     return (message, input[total_size:])
 
 
-class MessageHandler(object):
-  def __init__(self):
-    self.log = Logger(type(self).__name__)
-
-  def handle_message(self, message):
-    raise error('Method not implemented')
-
-
 class DirCrawler(object):
   def __init__(self, root_dir, exclude_list=[]):
     self.log = Logger(type(self).__name__)
@@ -236,8 +228,10 @@ class DirCrawler(object):
     all_files = []
     for root, dirs, files in os.walk(self._dir):
       for f in files:
-        rel_path = os.path.join(root, f)
+        complete_path = os.path.join(root, f)
+        rel_path = os.path.relpath(complete_path, self._dir)
         if not self._is_excluded(rel_path):
+          assert not os.path.isabs(rel_path), rel_path
           all_files.append(rel_path)
     self.log.debug(
         'Crawl found a total of [{}] files...'.format(len(all_files)))
@@ -257,7 +251,8 @@ class DirCrawler(object):
     data = {}
     computed_md5s = 0
     reused_md5s = 0
-    for file_path in all_files:
+    for rel_path in all_files:
+      file_path = os.path.join(self._dir, rel_path)
       mtime = os.path.getmtime(file_path)
       if file_path in previous_results and \
           previous_results[file_path][0] >= mtime:
@@ -266,7 +261,7 @@ class DirCrawler(object):
       else:
         md5 = DirCrawler.md5_hash(file_path)
         computed_md5s += 1
-        data[file_path] = (mtime, md5)
+        data[rel_path] = (mtime, md5)
     self.log.info('Finished computing all [{}] md5s and reused [{}].'.format(
         computed_md5s, reused_md5s))
     return data
@@ -360,6 +355,7 @@ class StateDiffer(object):
       current_diff = []
       results.append(current_diff)
       for path, (mtime, md5_hash) in src_dir.items():
+        assert not os.path.isabs(path), path
         if path not in dst_dir or md5_hash != dst_dir[path][1]:
           current_diff.append(path)
     return results
@@ -423,11 +419,37 @@ class RemoteServer(object):
       self._monitor = None
 
 
-class RemoteMessageHandler(MessageHandler):
+class FileWriter(object):
+  def __init__(self, dirs):
+    self.log = Logger(type(self).__name__)
+    self._dirs = dirs
+
+  def write(self, files):
+    total_files = 0
+    total_bytes = 0
+    try:
+      for i in range(len(files)):
+        root = self._dirs[i]
+        for rel_path, b64contents in files[i].items():
+          contents = base64.b64decode(b64contents)
+          self.log.debug('Writing [{}] bytes to root=[{}] file=[{}]...'\
+              .format(len(contents), root, rel_path))
+          path = os.path.join(root, rel_path)
+          with open(path, 'wb') as fp:
+            fp.write(contents)
+          total_files += 1
+          total_bytes += len(contents)
+    finally:
+      self.log.info('Wrote a total of [{}] files and [{}] bytes.'\
+          .format(total_files, total_bytes))
+
+
+class RemoteMessageHandler(object):
   def __init__(self, monitor):
-    MessageHandler.__init__(self)
+    self.log = Logger(type(self).__name__)
     self._monitor = monitor
     self._differ = StateDiffer()
+    self._writer = FileWriter(self._monitor.get_dirs())
 
   def handle_message(self, req):
     resp = None
@@ -444,6 +466,8 @@ class RemoteMessageHandler(MessageHandler):
       self.log.debug(str(resp))
     # MessageType.UPLOAD_REQUEST
     elif req.type == MessageType.UPLOAD_REQUEST:
+      uploaded_files = req.body['uploaded_files']
+      self._writer.write(uploaded_files)
       resp = Message(MessageType.UPLOAD_RESPONSE)
     else:
       err = ('No idea how to handle MessageType=[{}] so '
@@ -543,6 +567,7 @@ class FileUploader(object):
       current = {}
       results.append(current)
       for rel_path in files_per_dir:
+        assert not os.path.isabs(rel_path), rel_path
         abs_path = os.path.join(local_root, rel_path)
         with open(abs_path, 'r') as fp:
           content = fp.read()
