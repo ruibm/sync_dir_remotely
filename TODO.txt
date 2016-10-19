@@ -16,6 +16,8 @@ X Implement new Request type to get diff on Local.
 X Implement new Request type to upload files on Local.
 X Implement new Request type to get diff on Remote.
 X Implement new Request type to upload files on Remote.
+X Sign the payload using a secret token.
+- Find a way to pass the token via stdin so it does not show is 'ps'.
 - Symmetric encryption with shared secret.
 - Auto shutdown server after 30min without requests.
 

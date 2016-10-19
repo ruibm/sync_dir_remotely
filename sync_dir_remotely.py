@@ -23,8 +23,9 @@ import os.path
 import re
 import socket
 import struct
-import time
+import sys
 import threading
+import time
 
 
 
@@ -79,6 +80,13 @@ def parse_args():
 
   args = parser.parse_args()
   return args
+
+
+def md5(*args):
+  md5_hash = hashlib.md5()
+  for arg in args:
+    md5_hash.update(arg)
+  return md5_hash.hexdigest()
 
 
 #########################################################
@@ -199,6 +207,7 @@ class Message(object):
   def __init__(self, message_type):
     self.type = message_type
     self.body = {}
+    self.body['ts'] = time.time()
 
   def __str__(self):
     return 'Message(type=[{}] body=[{}])'\
@@ -209,33 +218,42 @@ class Message(object):
 
 
 class MessageSerde(object):
-  def __init__(self):
+  def __init__(self, token = 'NOT_IMPLEMENTED_YET'):
     self.log = Logger(type(self).__name__)
+    self._token = token
 
   def serialise(self, message):
-    """ Returns a list of bytes containing the serialised msg/ """
-    body = json.dumps(message.body)
-    header = struct.pack('>ii', message.type, len(body))
-    return header + body
+    """ Returns a list of bytes containing the serialised msg """
+    json_body = json.dumps(message.body)
+    body_md5 = self._md5(json_body)
+    body_bytes = len(json_body)
+    header = struct.pack('>i32si', message.type, body_md5, body_bytes)
+    return header + json_body
 
   def deserialise(self, input):
     """ Returns a tuple (Message, UnusedBytesList) """
     self.log.debug('Deserialising input of [{}] bytes...'.format(len(input)))
-    header_size = 8
-    if len(input) < header_size:
-      self.log.debug('Input buffer has less than 8 bytes.')
+    header_bytes = 4 + 32 + 4
+    if len(input) < header_bytes:
       return (None, input)
-    message_type, body_size = struct.unpack('>ii', input[0:header_size])
-    message = Message(message_type)
-    total_size = header_size + body_size
-    if len(input) < total_size:
-      self.log.debug('Input buffer has less than [{}] bytes.'.format(
-          total_size))
+    msg_type, body_md5, body_bytes = \
+        struct.unpack('>i32si', input[0:header_bytes])
+    total_bytes = header_bytes + body_bytes
+    if len(input) < total_bytes:
       return (None, input)
-    if body_size > 0:
-      raw_body = input[header_size:total_size]
-      message.body.update(json.loads(raw_body))
-    return (message, input[total_size:])
+    json_body = input[header_bytes:total_bytes]
+    expected_md5 = self._md5(json_body)
+    if body_md5 != expected_md5:
+      err = 'Server aborting! Expected_MD5=[{}] Actual_MD5=[{}]'\
+          .format(expected_md5, body_md5)
+      self.log.error(err)
+      sys.exit(42)
+    message = Message(msg_type)
+    message.body.update(json.loads(json_body))
+    return (message, input[total_bytes:])
+
+  def _md5(self, data):
+    return md5(os.getenv('USER'), data, self._token)
 
 
 class DirCrawler(object):

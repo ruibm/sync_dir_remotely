@@ -63,7 +63,7 @@ class DirCrawlerTest(unittest.TestCase):
     crawler = DirCrawler('~/buck/src', [r'.*/\..*', r'.*third-party/.*'])
     files = crawler.crawl_and_hash()
     files = crawler.crawl_and_hash(files)
-    self.assertEqual(2291, len(files))
+    self.assertEqual(2308, len(files))
 
 
 class StateDifferTest(unittest.TestCase):
