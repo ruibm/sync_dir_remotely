@@ -16,6 +16,7 @@ import argparse
 import base64
 import copy # copy.deepcopy(x)
 import datetime
+import getpass
 import hashlib
 import json
 import os
@@ -89,6 +90,20 @@ def md5(*args):
   return md5_hash.hexdigest()
 
 
+def read_token():
+  print('Please type the token for the communication: ')
+  if sys.stdin.isatty():
+    token = getpass.getpass(prompt_msg)
+  else:
+    token = sys.stdin.readline()
+  MIN_CHARS = 8
+  if not token or len(token) < MIN_CHARS:
+    print('ERROR: A token of at least [{}] characters must be provided.'\
+        .format(MIN_CHARS))
+    sys.exit(2)
+  return token
+
+
 #########################################################
 # Common Classes
 #########################################################
@@ -122,11 +137,11 @@ class Logger(object):
 
 
 class StreamHandler(object):
-  def __init__(self, socket):
+  def __init__(self, token, socket):
     self.log = Logger(type(self).__name__)
     self._socket = socket
     self._buffer = ''
-    self._serde = MessageSerde()
+    self._serde = MessageSerde(token)
 
   def __enter__(self):
     self.log.debug('Entering...')
@@ -202,7 +217,6 @@ class MessageType(object):
     return '{}({})'.format(MessageType.to_str(type_int), type_int)
 
 
-
 class Message(object):
   def __init__(self, message_type):
     self.type = message_type
@@ -218,7 +232,7 @@ class Message(object):
 
 
 class MessageSerde(object):
-  def __init__(self, token = 'NOT_IMPLEMENTED_YET'):
+  def __init__(self, token):
     self.log = Logger(type(self).__name__)
     self._token = token
 
@@ -434,7 +448,7 @@ class RemoteServer(object):
       connection.settimeout(SOCKET_TIMEOUT_SECS)
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
-      with StreamHandler(connection) as streamHandler:
+      with StreamHandler(args.token, connection) as streamHandler:
         while True:
           try:
             request = streamHandler.recvMessage()
@@ -634,6 +648,7 @@ LOG = Logger('main')
 #########################################################
 def main():
   args = parse_args()
+  args.token = read_token()
   Logger.LEVEL = args.verbosity
   LOG.info('Mode: [{}]'.format(args.mode))
   if args.mode == 'remote':
