@@ -11,4 +11,4 @@ TODO(ruibm): More information and description to come.
 ## License
 
 syn_dir_remotely.py is released under the license: Apache License Version 2.0, January 2004
-For full details please read: https://github.com/ruibm/sync_dir_remotely/blob/master/README.md
+For full details please read: https://github.com/ruibm/sync_dir_remotely/blob/master/LICENSE
