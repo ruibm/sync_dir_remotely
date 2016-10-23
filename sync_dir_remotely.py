@@ -261,7 +261,7 @@ class MessageSerde(object):
       err = 'Server aborting! Expected_MD5=[{}] Actual_MD5=[{}]'\
           .format(expected_md5, body_md5)
       self.log.error(err)
-      sys.exit(42)
+      raise Exception(err)
     message = Message(msg_type)
     message.body.update(json.loads(json_body))
     return (message, input[total_bytes:])
@@ -448,7 +448,7 @@ class RemoteServer(object):
       connection.settimeout(SOCKET_TIMEOUT_SECS)
       self.log.info('Accepted connection from address: [{}]'.format(
           str(address)))
-      with StreamHandler(args.token, connection) as streamHandler:
+      with StreamHandler(self._args.token, connection) as streamHandler:
         while True:
           try:
             request = streamHandler.recvMessage()
@@ -469,6 +469,7 @@ class RemoteServer(object):
     if exc_type and exc_value and traceback:
       self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
           .format(exc_type, exc_value, traceback))
+    print('Before the socket.' + str(self._socket))
     if self._socket:
       self._socket.close()
       self._socket = None
@@ -581,7 +582,7 @@ class LocalClient(object):
     self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
 
   def _process_messages(self):
-    with StreamHandler(self._socket) as stream_handler:
+    with StreamHandler(self._args.token, self._socket) as stream_handler:
       uploader = FileUploader(self._monitor, stream_handler)
       while True:
         uploader.upload_files()
