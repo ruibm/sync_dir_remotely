@@ -98,9 +98,9 @@ def read_token():
     token = sys.stdin.readline()
   MIN_CHARS = 8
   if not token or len(token) < MIN_CHARS:
-    print('ERROR: A token of at least [{}] characters must be provided.'\
-        .format(MIN_CHARS))
-    sys.exit(2)
+    msg = 'ERROR: A token of at least [{}] characters must be provided.'\
+        .format(MIN_CHARS)
+    raise HumaReadbleException(msg)
   return token
 
 
@@ -134,6 +134,12 @@ class Logger(object):
     if level >= 0 and level < len(LOG_LEVELS):
       level = LOG_LEVELS[level].upper()[0]
     print('[{}][{}]<{}> {}'.format(level, ts, self._name, msg))
+
+
+class HumaReadbleException(Exception):
+  def __init__(self, msg):
+    Exception.__init__(self, msg)
+    self.msg = msg
 
 
 class StreamHandler(object):
@@ -261,7 +267,7 @@ class MessageSerde(object):
       err = 'Server aborting! Expected_MD5=[{}] Actual_MD5=[{}]'\
           .format(expected_md5, body_md5)
       self.log.error(err)
-      raise Exception(err)
+      raise HumaReadbleException(err)
     message = Message(msg_type)
     message.body.update(json.loads(json_body))
     return (message, input[total_bytes:])
@@ -469,12 +475,11 @@ class RemoteServer(object):
     if exc_type and exc_value and traceback:
       self.log.error('Received exception type=[{}] value=[{}] traceback=[{}]'\
           .format(exc_type, exc_value, traceback))
-    print('Before the socket.' + str(self._socket))
     if self._socket:
       self._socket.close()
       self._socket = None
     if self._monitor:
-      self._monitor.start_monitoring()
+      self._monitor.stop_monitoring()
       self._monitor = None
 
 
@@ -648,16 +653,19 @@ LOG = Logger('main')
 # Main
 #########################################################
 def main():
-  args = parse_args()
-  args.token = read_token()
-  Logger.LEVEL = args.verbosity
-  LOG.info('Mode: [{}]'.format(args.mode))
-  if args.mode == 'remote':
-    with RemoteServer(args) as server:
-      server.run()
-  else:
-    with LocalClient(args) as client:
-      client.run()
+  try:
+    args = parse_args()
+    args.token = read_token()
+    Logger.LEVEL = args.verbosity
+    LOG.info('Mode: [{}]'.format(args.mode))
+    if args.mode == 'remote':
+      with RemoteServer(args) as server:
+        server.run()
+    else:
+      with LocalClient(args) as client:
+        client.run()
+  except HumaReadbleException, exception:
+    print(exception.msg)
 
 
 if __name__ == '__main__':
