@@ -18,6 +18,6 @@ X Implement new Request type to get diff on Remote.
 X Implement new Request type to upload files on Remote.
 X Sign the payload using a secret token.
 X Read the token from stdin so it does not show is 'ps'.
-- Auto shutdown server after 12h.
+X Auto shutdown server after 12h.
 - Symmetric encryption with shared secret.
 

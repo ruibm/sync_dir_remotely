@@ -79,6 +79,14 @@ def parse_args():
       help='Directories to keep in sync.',
   )
 
+  parser.add_argument(
+      '-s',
+      '--shutdown_secs',
+      type=int,
+      default=12 * 60 * 60,
+      help='Seconds for the server to auto-shutdown.',
+  )
+
   args = parser.parse_args()
   return args
 
@@ -96,6 +104,7 @@ def read_token():
     token = getpass.getpass(prompt_msg)
   else:
     token = sys.stdin.readline()
+  print('The token is: ' + token)
   MIN_CHARS = 8
   if not token or len(token) < MIN_CHARS:
     msg = 'ERROR: A token of at least [{}] characters must be provided.'\
@@ -140,6 +149,29 @@ class HumaReadbleException(Exception):
   def __init__(self, msg):
     Exception.__init__(self, msg)
     self.msg = msg
+
+
+class AutoShutdown(object):
+  def __init__(self, seconds):
+    self.log = Logger(type(self).__name__)
+    self._seconds = seconds
+
+  def _auto_shutdown(self):
+    msg = ('Auto shutdown has been triggered after [{}] seconds. '
+        'The program is exiting.'.format(self._seconds))
+    self.log.error(msg)
+    print(msg)
+    # Pretty lazy/dirty/ugly way of doing this.
+    os._exit(42)
+
+  def __enter__(self):
+    self._timer = threading.Timer(self._seconds, self._auto_shutdown)
+    self._timer.start()
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    self._timer.cancel()
+    self._timer = None
 
 
 class StreamHandler(object):
@@ -655,15 +687,16 @@ LOG = Logger('main')
 def main():
   try:
     args = parse_args()
-    args.token = read_token()
-    Logger.LEVEL = args.verbosity
-    LOG.info('Mode: [{}]'.format(args.mode))
-    if args.mode == 'remote':
-      with RemoteServer(args) as server:
-        server.run()
-    else:
-      with LocalClient(args) as client:
-        client.run()
+    with  AutoShutdown(args.shutdown_secs) as shutdown:
+      args.token = read_token()
+      Logger.LEVEL = args.verbosity
+      LOG.info('Mode: [{}]'.format(args.mode))
+      if args.mode == 'remote':
+        with RemoteServer(args) as server:
+          server.run()
+      else:
+        with LocalClient(args) as client:
+          client.run()
   except HumaReadbleException, exception:
     print(exception.msg)
 
