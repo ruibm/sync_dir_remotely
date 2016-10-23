@@ -19,5 +19,7 @@ X Implement new Request type to upload files on Remote.
 X Sign the payload using a secret token.
 X Read the token from stdin so it does not show is 'ps'.
 X Auto shutdown server after 12h.
+- Find out how to copy and run the python script via single ssh command.
+- Create a bash script that triggers both server and client.
 - Symmetric encryption with shared secret.
 
