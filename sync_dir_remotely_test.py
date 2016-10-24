@@ -59,12 +59,6 @@ class DirCrawlerTest(unittest.TestCase):
       self.assertEqual('0af9f1702bc23d5a33268e2755457773',
           files[file_path][1])
 
-  def test_buck_folder(self):
-    crawler = DirCrawler('~/buck/src', [r'.*/\..*', r'.*third-party/.*'])
-    files = crawler.crawl_and_hash()
-    files = crawler.crawl_and_hash(files)
-    self.assertEqual(2308, len(files))
-
 
 class StateDifferTest(unittest.TestCase):
   def test_one_dir_one_file_no_diff(self):
