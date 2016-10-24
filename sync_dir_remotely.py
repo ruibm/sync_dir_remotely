@@ -87,6 +87,23 @@ def parse_args():
       help='Seconds for the server to auto-shutdown.',
   )
 
+  parser.add_argument(
+      '-t',
+      '--token',
+      type=str,
+      default=None,
+      help='Token used to sign network messages.',
+  )
+
+  parser.add_argument(
+      '-i',
+      '--ip_version',
+      type=int,
+      default=4,
+      choices=(4, 6),
+      help='What IP version to use.',
+  )
+
   args = parser.parse_args()
   return args
 
@@ -98,11 +115,14 @@ def md5(*args):
   return md5_hash.hexdigest()
 
 
-def read_token():
-  print('Please type the token for the communication: ')
-  if sys.stdin.isatty():
+def read_token(args_token):
+  prompt_msg = 'Please type the token for the communication: '
+  if args_token:
+    token = args_token
+  elif sys.stdin.isatty():
     token = getpass.getpass(prompt_msg)
   else:
+    print(prompt_msg)
     token = sys.stdin.readline()
   print('The token is: ' + token)
   MIN_CHARS = 8
@@ -111,6 +131,15 @@ def read_token():
         .format(MIN_CHARS)
     raise HumaReadbleException(msg)
   return token
+
+
+def create_socket(ip_version):
+  if 4 == ip_version:
+    return socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  elif 6 == ip_version:
+    return socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+  else:
+    raise Exception('Unknown IP version: [{}].'.format(ip_version))
 
 
 #########################################################
@@ -142,7 +171,9 @@ class Logger(object):
         .strftime('%Y-%m-%d %H:%M:%S.%f')
     if level >= 0 and level < len(LOG_LEVELS):
       level = LOG_LEVELS[level].upper()[0]
-    print('[{}][{}]<{}> {}'.format(level, ts, self._name, msg))
+    stream = sys.stdout
+    stream.write('[{}][{}]<{}> {}\n'.format(level, ts, self._name, msg))
+    stream.flush()
 
 
 class HumaReadbleException(Exception):
@@ -472,7 +503,7 @@ class RemoteServer(object):
   def __enter__(self):
     self.log.debug('Entering...')
     self._monitor.start_monitoring()
-    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket = create_socket(self._args.ip_version)
     self._socket.bind(('', self._args.port))
     return self
 
@@ -531,6 +562,9 @@ class FileWriter(object):
           self.log.debug('Writing [{}] bytes to root=[{}] file=[{}]...'\
               .format(len(contents), root, rel_path))
           path = os.path.join(root, rel_path)
+          dirname = os.path.dirname(path)
+          if not os.path.isdir(dirname):
+            os.makedirs(dirname)
           with open(path, 'wb') as fp:
             fp.write(contents)
           total_files += 1
@@ -581,6 +615,7 @@ class LocalClient(object):
     self.log = Logger(type(self).__name__)
     self.log.debug('Initializing...')
     self._args = args
+    self._socket = None
 
   def __enter__(self):
     self.log.debug('Entering...')
@@ -603,19 +638,25 @@ class LocalClient(object):
         self._process_messages()
       except socket.timeout:
         self.log.warn('Socket timed out. Closing the connection.')
-      except socket.error:
-        self.log.warn('Unexpected socket exception. Closing connection.')
+      except socket.error as exception:
+        self.log.warn('Unexpected socket exception [{}]. Closing connection.'\
+            .format(exception))
       finally:
         self._disconnect()
       time.sleep(1.0)
 
   def _connect(self):
-    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket = create_socket(self._args.ip_version)
     self._socket.settimeout(SOCKET_TIMEOUT_SECS)
     remote = self._args.remote
     port = self._args.port
     self.log.info('Trying to connect to [{}:{}]'.format(remote, port))
-    self._socket.connect((remote, port))
+    if self._args.ip_version == 4:
+      self._socket.connect((remote, port))
+    elif self._args.ip_version == 6:
+      self._socket.connect((remote, port, 0, 0))
+    else:
+      raise Exception('Unknown IP version: [{}].'.format(ip_version))
     self.log.info('Successfully connected to [{}:{}]'.format(remote, port))
 
   def _process_messages(self):
@@ -688,7 +729,7 @@ def main():
   try:
     args = parse_args()
     with  AutoShutdown(args.shutdown_secs) as shutdown:
-      args.token = read_token()
+      args.token = read_token(args.token)
       Logger.LEVEL = args.verbosity
       LOG.info('Mode: [{}]'.format(args.mode))
       if args.mode == 'remote':
