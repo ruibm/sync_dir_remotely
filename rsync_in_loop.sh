@@ -10,7 +10,8 @@ function print_usage() {
 }
 
 function die() {
-  echo "Life's tough... and the script didn't work..."
+  local MSG=$1
+  echo "Life's tough... and the script didn't work with msg=[${MSG}]..."
   exit 42
 }
 
@@ -23,12 +24,14 @@ function run_rsync_in_loop() {
   local REMOTE_HOST=$1; shift
   local REMOTE_PATH=$1; shift
 
+  local SSH_CONTROL_PATH="${HOME}/.ssh/rsync_in_loop"
+  mkdir -p ${SSH_CONTROL_PATH} || die 'Failed to create control path.'
   local SSH_KEEP_ALIVE_SECS=3600
   local SSH_CMD="ssh \
       -6 \
       -o ControlMaster=auto \
       -o ControlPersist=${SSH_KEEP_ALIVE_SECS} \
-      -o ControlPath=${HOME}/.ssh/ssh-control-file/%r@%h:%p"
+      -o ControlPath=${SSH_CONTROL_PATH}/%r@%h:%p}"
 
   local RSYNC_CMD="rsync \
       --archive \
@@ -45,7 +48,7 @@ RSYNC_CMD=`echo ${RSYNC_CMD} | sed -e's/  */ /g'`
   while true; do
     echo -e "[$(get_date)] Running command: [${RSYNC_CMD}]..."
 
-    time eval ${RSYNC_CMD} || die
+    time eval ${RSYNC_CMD} || die 'Failed to run rsync.'
 
     local SLEEP_SECS=5
     echo -e "[$(get_date)] Sleeping ${SLEEP_SECS} seconds..."
