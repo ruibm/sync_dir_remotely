@@ -28,7 +28,7 @@ function run_rsync_in_loop() {
       -6 \
       -o ControlMaster=auto \
       -o ControlPersist=${SSH_KEEP_ALIVE_SECS} \
-      -o ControlPath=${HOME}/.ssh/buck-sync-ctl/%r@%h:%p"
+      -o ControlPath=${HOME}/.ssh/ssh-control-file/%r@%h:%p"
 
   local RSYNC_CMD="rsync \
       --archive \
