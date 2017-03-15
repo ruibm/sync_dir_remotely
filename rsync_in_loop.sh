@@ -95,7 +95,7 @@ function run_rsync_in_loop() {
 
 if [[ $# -ge 3 ]]; then
   # Run with bash arguments.
-  run_rsync_in_loop "$@"
+  run_rsync_in_loop "$@" ".*" ".*/"
 else
   print_usage
   exit 21
