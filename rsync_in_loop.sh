@@ -25,14 +25,22 @@ function run_rsync_in_loop() {
   local REMOTE_PATH=$1; shift
 
   if [ ! -d ${LOCAL_PATH} ]; then
+    print_usage
     echo "ERROR: Local directory [${LOCAL_PATH}] does not exist."
     exit 84
   fi
 
-  echo "Running rsync with arguments:"
-  echo "  LocalPath:    [${LOCAL_PATH}]"
-  echo "  RemoteServer: [${REMOTE_HOST}]"
-  echo "  RemotePath:   [${REMOTE_PATH}]"
+  host "$REMOTE_HOST" &> /dev/null
+  ERROR_RESOLVING_HOST=$?
+  if [ $ERROR_RESOLVING_HOST != 0 ]; then
+    print_usage
+    echo "ERROR: Cannot resolved hostname [$REMOTE_HOST]."
+    exit 63
+  fi
+
+  echo "Will now continously rsync:"
+  echo "  FROM: ${HOSTNAME}@${LOCAL_PATH}"
+  echo "  TO:   ${REMOTE_HOST}@${REMOTE_PATH}"
   echo ""
   read -p "Press enter to continue..."
 
