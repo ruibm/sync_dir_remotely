@@ -6,7 +6,7 @@
 #       remain connected to the network.
 
 function print_usage() {
-  echo "usage: $0 [LOCAL_PATH] [REMOTE_HOST] [REMOTE_PATH]"
+  echo "usage: $0 [LOCAL_PATH] [REMOTE_HOST] [REMOTE_PATH] [EXCLUDE_PATHS]*"
 }
 
 function die() {
@@ -38,9 +38,23 @@ function run_rsync_in_loop() {
     exit 63
   fi
 
+  local EXCLUDE_LIST=""
+  local EXCLUDE_CMD=""
+  while [ $# -gt 0 ]; do
+    local NEXT_EXCLUDE="$1"; shift
+    EXCLUDE_LIST="${EXCLUDE_LIST} \"${NEXT_EXCLUDE}\""
+    EXCLUDE_CMD="${EXCLUDE_CMD} --exclude \"${NEXT_EXCLUDE}\""
+
+    # NOTE(ruibm): Uncomment below for debug.
+    # echo $EXCLUDE_CMD
+  done
+
   echo "Will now continously rsync:"
-  echo "  FROM: ${HOSTNAME}@${LOCAL_PATH}"
-  echo "  TO:   ${REMOTE_HOST}@${REMOTE_PATH}"
+  echo "     FROM: ${HOSTNAME}@${LOCAL_PATH}"
+  echo "       TO: ${REMOTE_HOST}@${REMOTE_PATH}"
+  if [ ! -z "${EXCLUDE_LIST}" ]; then
+    echo "  EXCLUDE:${EXCLUDE_LIST}"
+  fi
   echo ""
   read -p "Press enter to continue..."
 
@@ -59,12 +73,13 @@ function run_rsync_in_loop() {
       --compress \
       --verbose \
       --delete \
+      ${EXCLUDE_CMD} \
       -e \"${SSH_CMD}\" \
       ${LOCAL_PATH} \
       ${USER}@${REMOTE_HOST}:${REMOTE_PATH}"
 
-# For pretty printing.
-RSYNC_CMD=`echo ${RSYNC_CMD} | sed -e's/  */ /g'`
+  # For pretty printing.
+  RSYNC_CMD=`echo ${RSYNC_CMD} | sed -e's/  */ /g'`
 
   while true; do
     echo -e "[$(get_date)] Running command: [${RSYNC_CMD}]..."
@@ -77,9 +92,10 @@ RSYNC_CMD=`echo ${RSYNC_CMD} | sed -e's/  */ /g'`
   done
 }
 
-if [[ $# -eq 3 ]]; then
+
+if [[ $# -ge 3 ]]; then
   # Run with bash arguments.
-  run_rsync_in_loop $1 $2 $3
+  run_rsync_in_loop "$@"
 else
   print_usage
   exit 21
