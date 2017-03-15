@@ -24,6 +24,18 @@ function run_rsync_in_loop() {
   local REMOTE_HOST=$1; shift
   local REMOTE_PATH=$1; shift
 
+  if [ ! -d ${LOCAL_PATH} ]; then
+    echo "ERROR: Local directory [${LOCAL_PATH}] does not exist."
+    exit 84
+  fi
+
+  echo "Running rsync with arguments:"
+  echo "  LocalPath:    [${LOCAL_PATH}]"
+  echo "  RemoteServer: [${REMOTE_HOST}]"
+  echo "  RemotePath:   [${REMOTE_PATH}]"
+  echo ""
+  read -p "Press enter to continue..."
+
   local SSH_CONTROL_PATH="${HOME}/.ssh/rsync_in_loop"
   mkdir -p ${SSH_CONTROL_PATH} || die 'Failed to create control path.'
   local SSH_KEEP_ALIVE_SECS=3600
@@ -38,6 +50,7 @@ function run_rsync_in_loop() {
       --human-readable \
       --compress \
       --verbose \
+      --delete \
       -e \"${SSH_CMD}\" \
       ${LOCAL_PATH} \
       ${USER}@${REMOTE_HOST}:${REMOTE_PATH}"
