@@ -56,7 +56,8 @@ function run_rsync_in_loop() {
     echo "  EXCLUDE:${EXCLUDE_LIST}"
   fi
   echo ""
-  read -p "Press enter to continue..."
+  # Disable this prompt as it was getting annoying.
+  # read -p "Press enter to continue..."
 
   local SSH_CONTROL_PATH="${HOME}/.ssh/rsync_in_loop"
   mkdir -p ${SSH_CONTROL_PATH} || die 'Failed to create control path.'
